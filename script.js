@@ -1038,6 +1038,22 @@ document.addEventListener('DOMContentLoaded', () => {
     adminBtn.onclick = () => { if (isAdmin) { document.getElementById('admin-modal').style.display = 'flex'; window.showAdminTab('mod'); } else alert('الأدوات مخصصة للإدارة فقط!'); };
     controlsContainer.appendChild(adminBtn);
 
+    // Mobile Menu Toggle
+    const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+    const channelsSidebar = document.querySelector('.channels-sidebar');
+    if (mobileMenuBtn) {
+        mobileMenuBtn.onclick = (e) => {
+            e.stopPropagation();
+            channelsSidebar.classList.toggle('active');
+        };
+    }
+
+    document.addEventListener('click', (e) => {
+        if (channelsSidebar.classList.contains('active') && !channelsSidebar.contains(e.target) && e.target !== mobileMenuBtn) {
+            channelsSidebar.classList.remove('active');
+        }
+    });
+
     const originalFetchUsers = fetchUsers;
     fetchUsers = async () => {
         await originalFetchUsers();

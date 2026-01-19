@@ -1098,9 +1098,13 @@ body {
 .modal-card {
     background: #313338;
     width: 440px;
+    max-width: 95vw;
     padding: 24px;
     border-radius: 8px;
     color: white;
+    max-height: 90vh;
+    overflow-y: auto;
+    position: relative;
 }
 
 .modal-header {
@@ -1113,7 +1117,13 @@ body {
 .close-modal {
     cursor: pointer;
     color: #949ba4;
-    font-size: 20px;
+    font-size: 24px;
+    padding: 10px;
+    transition: color 0.2s;
+}
+
+.close-modal:hover {
+    color: #fff;
 }
 
 .modal-footer {

@@ -282,3 +282,100 @@
     margin: 0;
     line-height: 1.4;
 }
+
+/* Mobile Responsiveness & Fixes */
+@media screen and (max-width: 768px) {
+    .members-sidebar {
+        display: none;
+        /* Hide members list on mobile */
+    }
+
+    .channels-sidebar {
+        width: 200px;
+        position: fixed;
+        right: -240px;
+        top: 0;
+        bottom: 0;
+        z-index: 1000;
+        transition: right 0.3s ease;
+    }
+
+    .channels-sidebar.active {
+        right: 72px;
+        /* Show next to servers sidebar */
+    }
+
+    .mobile-menu-btn {
+        display: block !important;
+    }
+
+    .modal-card {
+        padding: 15px;
+    }
+
+    .shop-grid {
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        gap: 10px;
+    }
+
+    .shop-item {
+        padding: 10px;
+    }
+
+    .shop-item img {
+        width: 40px;
+        height: 40px;
+    }
+
+    #shop-mobile-footer {
+        display: flex !important;
+        margin-top: 15px;
+    }
+
+    .message-input-wrapper {
+        padding: 10px;
+    }
+
+    .input-icons i {
+        margin-left: 8px;
+    }
+
+    /* Make modals easier to close on mobile */
+    .close-modal {
+        position: sticky;
+        top: 0;
+        right: 0;
+        background: rgba(0, 0, 0, 0.5);
+        border-radius: 50%;
+        width: 35px;
+        height: 35px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: -5px;
+    }
+}
+
+@media screen and (max-width: 480px) {
+    .servers-sidebar {
+        width: 60px;
+    }
+
+    .channels-sidebar {
+        display: none;
+        /* Auto-hide channels on very small screens */
+    }
+
+    .chat-header {
+        padding: 0 10px;
+    }
+
+    .header-actions {
+        gap: 10px;
+    }
+
+    .search-bar {
+        display: none;
+        /* Hide search bar to save space */
+    }
+}

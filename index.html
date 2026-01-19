@@ -178,6 +178,8 @@
         <main class="chat-area">
             <header class="chat-header">
                 <div class="header-info">
+                    <i class="fas fa-bars mobile-menu-btn" id="mobile-menu-btn"
+                        style="display: none; cursor: pointer; margin-left: 10px;"></i>
                     <i class="fas fa-hashtag"></i>
                     <h2>العام</h2>
                 </div>
@@ -383,6 +385,10 @@
                     onclick="document.getElementById('shop-modal').style.display='none'"></i>
             </header>
             <div id="shop-items-list" class="shop-grid"></div>
+            <div class="modal-footer" style="display: none;" id="shop-mobile-footer">
+                <button class="btn-save" style="width: 100%;"
+                    onclick="document.getElementById('shop-modal').style.display='none'">إغلاق</button>
+            </div>
         </div>
     </div>
 
