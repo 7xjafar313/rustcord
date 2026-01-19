@@ -3,7 +3,6 @@
     --bg-secondary: #2b2d31;
     --bg-tertiary: #1e1f22;
     --bg-accent: #ce412b;
-    /* Rust color */
     --bg-accent-hover: #b03825;
     --bg-floating: #111214;
     --text-normal: #dbdee1;
@@ -14,6 +13,26 @@
     --channel-hover: rgba(255, 255, 255, 0.04);
     --header-shadow: 0 1px 0 rgba(0, 0, 0, 0.2), 0 1.5px 0 rgba(0, 0, 0, 0.1);
     --bg-auth: #313338;
+}
+
+[data-theme="classic-dark"] {
+    --bg-primary: #36393f;
+    --bg-secondary: #2f3136;
+    --bg-tertiary: #202225;
+    --bg-accent: #5865f2;
+    --bg-accent-hover: #4752c4;
+}
+
+[data-theme="light-mode"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f2f3f5;
+    --bg-tertiary: #ebedef;
+    --bg-accent: #5865f2;
+    --text-normal: #2e3338;
+    --text-muted: #4f5660;
+    --text-header: #060607;
+    --channel-active: rgba(6, 6, 7, 0.08);
+    --channel-hover: rgba(6, 6, 7, 0.04);
 }
 
 /* Auth Screen Styles */
@@ -429,6 +448,29 @@ body {
     background-color: #23a559;
 }
 
+.status.idle {
+    background-color: #f1c40f;
+}
+
+.status.dnd {
+    background-color: #f23f42;
+    position: relative;
+}
+
+.status.dnd::after {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 2px;
+    width: 8px;
+    height: 2px;
+    background: #232428;
+}
+
+.status.offline {
+    background-color: #80848e;
+}
+
 .user-details {
     margin-right: 8px;
     display: flex;
@@ -595,9 +637,110 @@ body {
     position: relative;
 }
 
-.message:hover {
-    background-color: rgba(0, 0, 0, 0.08);
-    /* Darker on hover like Rust Cord */
+/* Message Actions (Reply, Edit, Delete) */
+.message-actions {
+    position: absolute;
+    top: -15px;
+    left: 16px;
+    background: var(--bg-secondary);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    display: none;
+    gap: 8px;
+    padding: 4px 8px;
+    z-index: 5;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+.message:hover .message-actions {
+    display: flex;
+}
+
+.message-actions i {
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 14px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.message-actions i:hover {
+    color: var(--text-normal);
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+}
+
+.message-actions .fa-trash:hover {
+    color: #f23f42;
+}
+
+/* Reply Styling */
+.reply-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-right: 56px;
+    position: relative;
+}
+
+.reply-container::before {
+    content: '';
+    position: absolute;
+    right: -25px;
+    top: 50%;
+    width: 20px;
+    height: 10px;
+    border-top: 2px solid #4f545c;
+    border-right: 2px solid #4f545c;
+    border-top-right-radius: 6px;
+}
+
+.reply-avatar {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+}
+
+/* Markdown and Badges */
+.role-badge {
+    font-size: 10px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    margin-right: 5px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.badge-owner {
+    background: rgba(231, 76, 60, 0.2);
+    color: #e74c3c;
+    border: 1px solid #e74c3c;
+}
+
+.badge-admin {
+    background: rgba(241, 196, 15, 0.2);
+    color: #f1c40f;
+    border: 1px solid #f1c40f;
+}
+
+.message-text b {
+    font-weight: 700;
+    color: #fff;
+}
+
+.message-text code {
+    background: #1e1f22;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-family: monospace;
+    color: #e6e6e6;
 }
 
 .message-avatar {
@@ -672,9 +815,38 @@ body {
     padding: 0 16px 24px 16px;
 }
 
+/* Typing and Reply Preview */
+.reply-preview {
+    background: #2b2d31;
+    padding: 8px 16px;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.reply-preview span {
+    color: var(--text-muted);
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.typing-indicator {
+    height: 20px;
+    padding: 0 16px;
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
 .message-input {
     background-color: #383a40;
-    border-radius: 8px;
+    border-bottom-left-radius: 8px;
+    border-bottom-right-radius: 8px;
     display: flex;
     align-items: center;
     padding: 0 16px;
@@ -727,31 +899,167 @@ body {
 .members-sidebar {
     width: 240px;
     background-color: var(--bg-secondary);
-    padding: 12px 8px;
+    padding: 12px 16px;
     overflow-y: auto;
     flex-shrink: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.member-category {
+.members-group {
+    margin-bottom: 24px;
+}
+
+.group-title {
     color: var(--text-muted);
     font-size: 12px;
     font-weight: 600;
     text-transform: uppercase;
-    padding: 8px;
+    margin-bottom: 8px;
+    letter-spacing: 0.5px;
 }
 
 .member-item {
     display: flex;
     align-items: center;
-    padding: 4px 8px;
+    padding: 6px 8px;
     border-radius: 4px;
     cursor: pointer;
-    margin: 2px 0;
+    margin: 1px 0;
     gap: 12px;
+    transition: background 0.2s;
 }
 
-.member-item:hover {
-    background-color: var(--channel-hover);
+/* Reactions UI */
+.reactions-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.reaction-chip {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 2px 6px;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s;
+}
+
+.reaction-chip:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.reaction-chip.active {
+    background: rgba(88, 101, 242, 0.15);
+    border-color: #5865f2;
+}
+
+.reaction-chip .count {
+    font-size: 12px;
+    color: var(--text-normal);
+    font-weight: 600;
+}
+
+/* GIF Picker */
+.gif-picker {
+    position: absolute;
+    bottom: 80px;
+    left: 20px;
+    width: 300px;
+    height: 400px;
+    background: var(--bg-floating);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+}
+
+.gif-search {
+    padding: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.gif-search input {
+    width: 100%;
+    padding: 8px;
+    background: #1e1f22;
+    border: none;
+    border-radius: 4px;
+    color: #fff;
+    outline: none;
+}
+
+.gif-results {
+    flex: 1;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 4px;
+    padding: 4px;
+}
+
+.gif-results img {
+    width: 100%;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: transform 0.2s;
+}
+
+.gif-results img:hover {
+    transform: scale(1.05);
+}
+
+/* Pinned Sidebar */
+.pinned-sidebar {
+    width: 350px;
+    background: var(--bg-secondary);
+    border-left: 1px solid rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
+    z-index: 100;
+}
+
+.pinned-header {
+    padding: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.pinned-header h3 {
+    font-size: 16px;
+    color: #fff;
+}
+
+#pinned-messages-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+}
+
+#pinned-messages-list .message {
+    padding: 8px;
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    margin-bottom: 12px;
+}
+
+/* Custom Status in Members list */
+.member-custom-status {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-style: italic;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .member-info {
@@ -845,6 +1153,31 @@ body {
 .btn-logout:hover {
     background: #f23f42;
     color: white;
+}
+
+/* Voice User List Styles */
+.voice-user-list {
+    display: flex;
+    flex-direction: column;
+    padding-right: 20px;
+    margin-top: 4px;
+    width: 100%;
+}
+
+.voice-user-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-size: 13px;
+    color: var(--text-normal);
+}
+
+.voice-user-item img {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
 }
 
 /* Scrollbar Styles */
