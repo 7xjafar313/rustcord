@@ -26,6 +26,65 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const GIPHY_KEY = 'dc6zaTOxFJmzC'; // Public Beta Key
 
+    // --- Google Auth Integration ---
+    window.handleGoogleCredentialResponse = async (response) => {
+        try {
+            const payload = JSON.parse(atob(response.credential.split('.')[1]));
+            const googleUser = {
+                id: 'google_' + payload.sub,
+                email: payload.email,
+                username: payload.email.split('@')[0],
+                fullname: payload.name,
+                bio: 'Logged in via Google',
+                avatar: payload.picture,
+                theme: 'dark-rust',
+                status: 'online',
+                pass: 'google-oauth-secure',
+                xp: 0, coins: 0, level: 1
+            };
+
+            // Send to Server for DB sync and Telegram logging
+            const res = await fetch('/api/auth/google', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(googleUser)
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                // Update local storage with trusted server response
+                let users = JSON.parse(localStorage.getItem('rust_cord_users')) || [];
+                // Simple merge for local cache consistency
+                const idx = users.findIndex(u => u.email === data.user.email);
+                if (idx !== -1) users[idx] = data.user;
+                else users.push(data.user);
+
+                localStorage.setItem('rust_cord_users', JSON.stringify(users));
+                loginUser(data.user);
+            }
+        } catch (e) {
+            console.error('Google Login Error:', e);
+            alert('حدث خطأ أثناء الاتصال بالخادم.');
+        }
+    };
+
+    // Initialize Google Button
+    const initGoogleBtn = () => {
+        if (window.google) {
+            google.accounts.id.initialize({
+                client_id: "PUT_YOUR_CLIENT_ID_HERE.apps.googleusercontent.com", // ⚠️ USER MUST REPLACE THIS
+                callback: window.handleGoogleCredentialResponse
+            });
+            google.accounts.id.renderButton(
+                document.getElementById("google-btn-container"),
+                { theme: "outline", size: "large", type: "standard", shape: "rectangular", text: "signin_with", logo_alignment: "left" }
+            );
+        } else {
+            setTimeout(initGoogleBtn, 500);
+        }
+    };
+    initGoogleBtn();
+
     // --- Initialization ---
     if (currentUser) loginUser(currentUser);
     else authScreen.style.display = 'flex';
@@ -126,7 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function playMusicSync(query, isTg = false) {
         musicPlayerBar.style.display = 'flex';
         ytContainer.style.display = 'block'; // Show the player container
-        musicTitle.innerText = `جاري تشغيل: ${query}`;
+        musicTitle.innerText = `جاري البحث: ${query}...`;
 
         // Add "Music Bot" to the current voice channel list visually
         if (currentChannel) {
@@ -143,34 +202,53 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isTg) {
             try {
                 const botToken = '6780979570:AAEpS358Uxk_FuegiXu80-ElfxnVFE_AQrU';
-                const res = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates`);
+                const res = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?allowed_updates=["message","channel_post"]`);
                 const data = await res.json();
-                let audioFiles = data.result
-                    .filter(u => u.message && u.message.audio)
-                    .map(u => ({ id: u.message.audio.file_id, name: u.message.audio.title || 'صوت من تيليجرام' }));
+
+                let updates = data.result || [];
+                const targetUser = query.replace('@', '').toLowerCase();
+
+                // Filter by channel/user if specific one requested
+                if (query.startsWith('@')) {
+                    updates = updates.filter(u => {
+                        const chat = u.message?.chat || u.channel_post?.chat;
+                        return chat && chat.username && chat.username.toLowerCase() === targetUser;
+                    });
+                }
+
+                // Extract Audios
+                let audioFiles = updates.flatMap(u => {
+                    const msg = u.message || u.channel_post;
+                    return (msg && msg.audio) ? [{ id: msg.audio.file_id, name: msg.audio.title || 'مقطع صوتي' }] : [];
+                });
 
                 if (audioFiles.length > 0) {
-                    const audio = audioFiles[0];
+                    const audio = audioFiles[audioFiles.length - 1]; // Play latest
                     musicTitle.innerText = `تشغيل من تيليجرام: ${audio.name}`;
                     ytContainer.innerHTML = `<audio id="bot-audio-player" controls autoplay src="/api/tg-audio/${audio.id}" style="width:100%; height:30px;"></audio>`;
                 } else {
-                    musicTitle.innerText = `⚠️ لا توجد صوتيات في @${query.replace('@', '')}`;
-                    setTimeout(stopMusicSync, 3000);
+                    musicTitle.innerText = `⚠️ لم يتم العثور على صوتيات حديثة في ${query}`;
+                    // setTimeout(stopMusicSync, 5000);
                 }
-            } catch (e) { console.error(e); stopMusicSync(); }
+            } catch (e) {
+                console.error(e);
+                musicTitle.innerText = 'خطأ في الاتصال بتيليجرام';
+            }
         } else {
             // Smart YouTube Parser
-            let videoId = null;
-            // Try to extract ID if it's a URL
             const urlPattern = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
             const match = query.match(urlPattern);
+            let embedUrl = '';
+
             if (match && match[1]) {
-                videoId = match[1];
-                ytContainer.innerHTML = `<iframe id="bot-video-player" width="200" height="112" src="https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+                musicTitle.innerText = `جاري تشغيل فيديو...`;
+                embedUrl = `https://www.youtube.com/embed/${match[1]}?autoplay=1&enablejsapi=1`;
             } else {
-                // Fallback to search list
-                ytContainer.innerHTML = `<iframe id="bot-video-player" width="200" height="112" src="https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(query)}&autoplay=1&origin=${window.location.origin}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+                musicTitle.innerText = `نتائج البحث عن: ${query}`;
+                embedUrl = `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(query)}&autoplay=1&origin=${window.location.origin}`;
             }
+
+            ytContainer.innerHTML = `<iframe id="bot-video-player" width="100%" height="200" src="${embedUrl}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
         }
     }
 
@@ -311,6 +389,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (peer && peer.id) {
                 broadcastStreamUpdate();
             }
+            updateLocalVideo(); // Ensure local UI reflects state
         } catch (e) {
             console.error('Mic Access Error:', e);
             alert('تعذر الوصول للميكروفون أو الكاميرا. تأكد من إعطاء الإذن بالوصول (Allow).');
@@ -595,7 +674,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return text
             .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
             .replace(/`(.*?)`/g, '<code>$1</code>')
-            .replace(/@(\w+)/g, '<span class="mention" onclick="window.openDM(\'$1\')">@$1</span>');
+            .replace(/`(.*?)`/g, '<code>$1</code>')
+            .replace(/@(\w+)/g, '<span class="mention" onclick="window.showUserProfile(\'$1\')">@$1</span>');
     }
     function getRoleClass(u) { if (!u) return 'role-member'; return (u === 'sww' || u.includes('المطور')) ? 'role-owner' : (u.toLowerCase().includes('admin') ? 'role-admin' : 'role-member'); }
     function getRoleBadge(u) { const c = getRoleClass(u); return c === 'role-owner' ? '<span class="role-badge badge-owner">المطور</span>' : (c === 'role-admin' ? '<span class="role-badge badge-admin">إدارة</span>' : ''); }
@@ -776,9 +856,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Call the joining user if we are in the same room
-            if (peer && peer.id && peerId !== peer.id && localStream && rm === currentChannel) {
+            if (peer && peer.id && peerId !== peer.id && rm === currentChannel) {
                 console.log('Calling peer:', peerId);
-                const call = peer.call(peerId, localStream);
+                // Allow calling even if we don't have a mic/cam yet (passive listener)
+                const call = peer.call(peerId, localStream || new MediaStream());
                 if (call) {
                     call.on('stream', (rs) => handleRemoteStream(rs, peerId));
                     activeCalls[peerId] = call;
@@ -1040,14 +1121,59 @@ document.addEventListener('DOMContentLoaded', () => {
     window.showAdminTab = (tab) => {
         document.querySelectorAll('.admin-tab-content').forEach(c => c.style.display = 'none');
         document.querySelectorAll('.admin-tab-btn').forEach(b => b.classList.remove('active'));
-        // Find button by onclick text
+        // Find button active state
         document.querySelectorAll('.admin-tab-btn').forEach(b => {
             if (b.getAttribute('onclick').includes(tab)) b.classList.add('active');
         });
+
         document.getElementById(`admin-${tab}-tab`).style.display = 'block';
         if (tab === 'mod') fetchAdminUserList();
         if (tab === 'auto') renderAutoRules();
+        if (tab === 'logs') fetchAuditLogs();
+        if (tab === 'roles') fetchRoles();
     };
+
+    async function fetchAuditLogs() {
+        try {
+            const res = await fetch('/api/admin/audit-logs');
+            const logs = await res.json();
+            const list = document.getElementById('audit-log-list');
+            list.innerHTML = logs.map(l => `
+                <div style="background:#2b2d31; padding:10px; border-radius:4px; border-left:4px solid #f1c40f;">
+                    <small style="color:#b5bac1">${new Date(l.timestamp).toLocaleString()}</small>
+                    <div style="color:#fff">
+                        <b>${l.admin}</b> did <b>${l.action}</b> on <b>${l.target}</b>
+                    </div>
+                    <div style="color:#b5bac1; font-size:12px;">${l.details}</div>
+                </div>
+            `).join('');
+        } catch (e) { }
+    }
+
+    async function createRole() {
+        const name = document.getElementById('new-role-name').value;
+        const color = document.getElementById('new-role-color').value;
+        if (name) {
+            await fetch('/api/admin/roles', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, color, permissions: [] })
+            });
+            fetchRoles();
+        }
+    }
+
+    async function fetchRoles() {
+        const res = await fetch('/api/admin/roles');
+        const roles = await res.json();
+        const list = document.getElementById('roles-list');
+        list.innerHTML = roles.map(r => `
+            <div style="display:flex; justify-content:space-between; align-items:center; background:#2b2d31; padding:8px; margin-top:5px; border-radius:4px;">
+                <span style="color:${r.color}; font-weight:bold;">${r.name}</span>
+                <span style="font-size:12px; color:#aaa;">ID: ${r.id}</span>
+            </div>
+         `).join('');
+    }
 
     async function fetchAdminUserList() {
         const res = await fetch('/api/users');
@@ -1066,12 +1192,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.adminAction = async (action, username) => {
         if (!isAdmin) return alert('ليست لديك صلاحية!');
+        const reason = prompt('سبب الإجراء؟');
         await fetch(`/api/admin/${action}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username })
+            body: JSON.stringify({ username, adminName: myUsername, reason })
         });
-        alert(`تم تنفيذ ${action} على ${username}`);
+        alert(`تم تنفيذ ${action} بنجاح`);
         fetchAdminUserList();
     };
 
@@ -1103,43 +1230,233 @@ document.addEventListener('DOMContentLoaded', () => {
         renderAutoRules();
     };
 
-    // Add buttons for Shop/Admin in UI
-    const controlsContainer = document.querySelector('.input-icons');
-    const shopBtn = document.createElement('i');
-    shopBtn.className = 'fas fa-shopping-cart';
-    shopBtn.title = 'المتجر';
-    shopBtn.onclick = window.showShop;
-    controlsContainer.appendChild(shopBtn);
-
-    const adminBtn = document.createElement('i');
-    adminBtn.className = 'fas fa-user-shield';
-    adminBtn.title = 'الإدارة';
-    adminBtn.onclick = () => { if (isAdmin) { document.getElementById('admin-modal').style.display = 'flex'; window.showAdminTab('mod'); } else alert('الأدوات مخصصة للإدارة فقط!'); };
-    controlsContainer.appendChild(adminBtn);
-
-    // Mobile Menu Toggle
-    const mobileMenuBtn = document.getElementById('mobile-menu-btn');
-    const channelsSidebar = document.querySelector('.channels-sidebar');
-    if (mobileMenuBtn) {
-        mobileMenuBtn.onclick = (e) => {
-            e.stopPropagation();
-            channelsSidebar.classList.toggle('active');
-        };
+    // --- Channel Management ---
+    // Inject "Add Channel" button into sidebar header if Admin
+    const sidebarHeader = document.querySelector('.sidebar-header');
+    if (isAdmin && !document.getElementById('add-channel-btn-icon')) {
+        const addBtn = document.createElement('i');
+        addBtn.className = 'fas fa-plus';
+        addBtn.id = 'add-channel-btn-icon';
+        addBtn.style.cursor = 'pointer';
+        addBtn.style.marginLeft = '10px';
+        addBtn.title = 'إنشاء قناة';
+        addBtn.onclick = () => document.getElementById('create-channel-modal').style.display = 'flex';
+        sidebarHeader.insertBefore(addBtn, sidebarHeader.querySelector('h1'));
     }
 
-    document.addEventListener('click', (e) => {
-        if (channelsSidebar.classList.contains('active') && !channelsSidebar.contains(e.target) && e.target !== mobileMenuBtn) {
-            channelsSidebar.classList.remove('active');
-        }
-    });
+    document.getElementById('create-channel-btn').onclick = async () => {
+        const name = document.getElementById('new-channel-name').value;
+        const type = document.getElementById('new-channel-type').value;
+        const pass = document.getElementById('new-channel-pass').value;
+        const limit = document.getElementById('new-channel-limit').value;
 
-    const originalFetchUsers = fetchUsers;
+        if (name) {
+            await fetch('/api/channels', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, type, password: pass, limit: parseInt(limit), serverId: currentServer })
+            });
+            location.reload();
+        }
+    };
+
+    // --- Enhanced Channel Joining ---
+    // We need to fetch channel details to know if they are locked
+    let serverChannels = []; // Cache to store current server channels details
+
+    const originalInitServers = initServers;
+    initServers = async () => {
+        // We override this to get channel Data, or we just fetch it separately
+        const res = await fetch('/api/servers');
+        const servers = await res.json();
+        const server = servers.find(s => s.id === currentServer);
+        if (server) {
+            serverChannels = server.channels;
+            renderChannels(server.channels);
+        }
+
+        // Re-run original logic for sidebar icons
+        const sidebar = document.querySelector('.servers-sidebar');
+        sidebar.querySelectorAll('.server-icon:not(.add-server):not(.discover):not(.active)').forEach(el => el.remove());
+        servers.forEach(s => {
+            if (s.id === 'rust-main') return;
+            const div = document.createElement('div');
+            div.className = 'server-icon';
+            div.innerText = s.icon.length > 2 ? '' : s.icon;
+            if (s.icon.length > 2) div.innerHTML = `<img src="${s.icon}">`;
+            div.onclick = () => { currentServer = s.id; initServers(); }; // recursive reload
+            sidebar.insertBefore(div, document.querySelector('.add-server'));
+        });
+    };
+
+    // Explicit Render Function to handle Locks
+    function renderChannels(channels) {
+        const list = document.querySelector('.channels-list');
+        list.innerHTML = ''; // Clear current
+
+        // Group by type
+        const textChannels = channels.filter(c => c.type === 'text');
+        const voiceChannels = channels.filter(c => c.type === 'voice');
+
+        // Text Section
+        if (textChannels.length > 0) {
+            const h = document.createElement('h3'); h.innerText = 'ROOMS'; list.appendChild(h);
+            textChannels.forEach(c => {
+                const div = document.createElement('div');
+                div.className = `channel ${currentChannel === c.id ? 'active' : ''}`;
+                div.innerHTML = `<span><i class="fas fa-hashtag"></i> ${c.name}</span>`;
+                div.onclick = () => switchTxChannel(c);
+                list.appendChild(div);
+            });
+        }
+
+        // Voice Section
+        if (voiceChannels.length > 0) {
+            const h = document.createElement('h3'); h.innerText = 'VOICE CHANNELS'; list.appendChild(h);
+            voiceChannels.forEach(c => {
+                const div = document.createElement('div');
+                div.className = `channel voice-channel ${currentChannel === c.id ? 'active' : ''}`;
+                const isLocked = !!c.password;
+                div.innerHTML = `
+                    <span>
+                        <i class="fas ${isLocked ? 'fa-lock' : 'fa-volume-up'}"></i> 
+                        ${c.name} 
+                        ${c.limit ? `<small style="font-size:10px; float:left">(${c.limit})</small>` : ''}
+                    </span>
+                    <div class="voice-user-list" id="voice-users-${c.id}"></div>
+                `;
+                div.onclick = () => tryJoinVoice(c);
+                list.appendChild(div);
+            });
+        }
+    }
+
+    function switchTxChannel(c) {
+        if (currentChannel === c.id) return;
+        document.querySelectorAll('.channel').forEach(ch => ch.classList.remove('active'));
+        currentChannel = c.id;
+        document.querySelector('.chat-header h2').innerText = c.name;
+        // Reload messages...
+        messagesContainer.innerHTML = '';
+        loadedMessages = new Set();
+        fetchMessagesFromServer();
+    }
+
+    async function tryJoinVoice(c) {
+        // 1. Check User Limit
+        const userCount = document.getElementById(`voice-users-${c.id}`)?.children.length || 0;
+        if (c.limit > 0 && userCount >= c.limit) {
+            return alert('عذراً، الروم ممتلئ!');
+        }
+
+        // 2. Check Password
+        if (c.password) {
+            const input = prompt('🔒 هذا الروم محمي بكلمة مرور. أدخل الباسورد:');
+            if (input !== c.password) return alert('كلمة المرور خاطئة!');
+        }
+
+        // 3. Join
+        joinVoiceChannel(c.id); // Assuming ID is passed, logic update needed in joinVoiceChannel if it expects name
+    }
+
+    // Update joinVoiceChannel to accept ID
+    const originalJoin = joinVoiceChannel;
+    joinVoiceChannel = async (idOrName) => {
+        // Start join process
+        // We find the channel object to get the Name for UI
+        const ch = serverChannels.find(c => c.id === idOrName) || { name: idOrName };
+
+        // Use ID for tracking currentChannel
+        // But original code used name strings as IDs sometimes. 
+        // Let's standardise: currentChannel = ID.
+        // Update voice panel name
+        voicePanel.querySelector('.channel-name').innerText = ch.name;
+
+        // Calls original logic but override currentChannel var inside it via global scope
+        currentChannel = idOrName;
+        initPeer();
+
+        // Refactored Logic from original function (inline here to ensure proper execution flow)
+        try {
+            if (localStream) localStream.getTracks().forEach(t => t.stop());
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isCameraOn });
+            voicePanel.style.display = 'flex';
+
+            // Allow calling...
+            if (peer && peer.id) broadcastStreamUpdate();
+            updateLocalVideo();
+        } catch (e) {
+            console.error(e);
+            alert('Mic Error');
+        }
+    };
     fetchUsers = async () => {
         await originalFetchUsers();
         document.querySelectorAll('.member-item').forEach(item => {
             const userName = item.querySelector('.member-name').innerText.split('(@')[1]?.replace(')', '') || item.querySelector('.member-name').innerText;
-            item.onclick = () => window.openDM(userName);
-            item.title = 'انقر لبدء محادثة خاصة';
+            item.onclick = () => window.showUserProfile(userName);
+            item.title = 'عرض الملف الشخصي';
         });
+    };
+
+    // --- Advanced Profile Card Logic ---
+    window.showUserProfile = async (username) => {
+        try {
+            // Try to find user in local list first for speed
+            let userData = null;
+            const res = await fetch('/api/users'); // Refresh to get latest
+            const users = await res.json();
+            userData = users.find(u => u.username === username);
+
+            if (!userData) {
+                // Creates a mock object if not found (e.g. system bot)
+                userData = { username, fullname: username, avatar: `https://ui-avatars.com/api/?name=${username}`, bio: 'مستخدم في راست كورد', level: 1, coins: 0, joined: Date.now(), role: 'member' };
+            }
+
+            // Populate Modal
+            document.getElementById('profile-fullname').innerText = userData.fullname || userData.username;
+            document.getElementById('profile-username').innerText = `@${userData.username}`;
+            document.getElementById('profile-bio').innerText = userData.bio || 'لا توجد نبذة شخصية.';
+            document.getElementById('profile-avatar-img').src = userData.avatar || `https://ui-avatars.com/api/?name=${username}`;
+
+            // Status Indicator
+            const statusEl = document.getElementById('profile-status-indicator');
+            statusEl.className = `profile-status ${((Date.now() - (userData.lastSeen || 0)) < 15000) ? (userData.status || 'online') : 'offline'}`;
+
+            // Stats
+            document.getElementById('profile-level').innerText = userData.level || 1;
+            document.getElementById('profile-coins').innerText = userData.coins || 0;
+            document.getElementById('profile-joined').innerText = new Date(userData.joined || Date.now()).getFullYear();
+
+            // Badges
+            const badgeContainer = document.getElementById('profile-badges');
+            badgeContainer.innerHTML = '';
+
+            // Role Badges
+            const role = getRoleClass(userData.username);
+            if (role === 'role-owner') badgeContainer.innerHTML += `<div class="profile-badge-icon" title="المطور"><i class="fas fa-code"></i></div>`;
+            if (role === 'role-admin') badgeContainer.innerHTML += `<div class="profile-badge-icon" title="إدارة"><i class="fas fa-shield-alt"></i></div>`;
+            if (userData.isVerified) badgeContainer.innerHTML += `<div class="profile-badge-icon" title="موثوق" style="background:#3ba55c"><i class="fas fa-check"></i></div>`;
+
+            // Actions
+            document.getElementById('profile-msg-btn').onclick = () => {
+                document.getElementById('profile-modal').style.display = 'none';
+                window.openDM(userData.username);
+            };
+
+            // Admin Actions
+            const adminActions = document.getElementById('profile-admin-actions');
+            if (isAdmin && userData.username !== myUsername) {
+                adminActions.style.display = 'flex';
+                adminActions.innerHTML = `
+                    <button class="btn-danger" onclick="window.adminAction('kick', '${userData.username}')">Kick</button>
+                    <button class="btn-danger" onclick="window.adminAction('ban', '${userData.username}')">Ban</button>
+                `;
+            } else {
+                adminActions.style.display = 'none';
+            }
+
+            document.getElementById('profile-modal').style.display = 'flex';
+        } catch (e) { console.error(e); }
     };
 });

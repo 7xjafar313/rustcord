@@ -53,6 +53,7 @@
                     <input type="url" id="auth-avatar" placeholder="https://example.com/image.jpg">
                 </div>
                 <button type="submit" class="auth-btn" id="auth-submit">تسجيل الدخول</button>
+                <div id="google-btn-container" style="display: flex; justify-content: center; margin: 15px 0;"></div>
                 <div class="auth-footer">
                     <span id="auth-switch-text">تحتاج إلى حساب؟</span>
                     <a href="#" id="auth-switch-link">سجل الآن</a>
@@ -394,7 +395,7 @@
 
     <!-- Admin Dashboard Modal -->
     <div id="admin-modal" class="modal-overlay" style="display: none;">
-        <div class="modal-card">
+        <div class="modal-card" style="width: 700px; max-width: 90%;">
             <header class="modal-header">
                 <h2>لوحة تحكم الإدارة 🛡️</h2><i class="fas fa-times close-modal"
                     onclick="document.getElementById('admin-modal').style.display='none'"></i>
@@ -403,36 +404,141 @@
                 <button class="admin-tab-btn active" onclick="window.showAdminTab('mod')">المراقبة</button>
                 <button class="admin-tab-btn" onclick="window.showAdminTab('auto')">الردود الآلية</button>
                 <button class="admin-tab-btn" onclick="window.showAdminTab('announce')">الإعلانات</button>
+                <button class="admin-tab-btn" onclick="window.showAdminTab('logs')">سجل الأحداث</button>
+                <button class="admin-tab-btn" onclick="window.showAdminTab('roles')">الرتب</button>
             </div>
-            <div id="admin-mod-tab" class="admin-tab-content">
-                <h3>إدارة الأعضاء</h3><br>
-                <div id="admin-user-list"></div>
-            </div>
-            <div id="admin-auto-tab" class="admin-tab-content" style="display: none;">
-                <h3>قواعد الرد الآلي</h3><br>
-                <div class="input-group">
-                    <input type="text" id="auto-trigger" placeholder="عندما يكتب العضو...">
-                    <input type="text" id="auto-response" placeholder="يقوم البوت بالرد بـ...">
-                    <button onclick="window.addAutoRule()" class="btn-save" style="margin-top: 10px;">إضافة
-                        قاعدة</button>
+
+            <div class="modal-body" style="height: 400px; overflow-y: auto;">
+                <div id="admin-mod-tab" class="admin-tab-content">
+                    <h3>إدارة الأعضاء</h3><br>
+                    <div id="admin-user-list"></div>
                 </div>
-                <div id="auto-rules-list" style="margin-top: 20px;"></div>
-            </div>
-            <div id="admin-announce-tab" class="admin-tab-content" style="display: none;">
-                <h3>إدارة شريط الإعلانات</h3><br>
-                <div class="input-group">
-                    <label>نص الإعلان</label>
-                    <input type="text" id="admin-announce-text" placeholder="اكتب خبر عاجل...">
-                    <label>تفعيل</label>
-                    <input type="checkbox" id="admin-announce-active" checked>
-                    <button onclick="window.updateAnnouncement()" class="btn-save" style="margin-top: 10px;">نشر
-                        الإعلان</button>
+                <div id="admin-auto-tab" class="admin-tab-content" style="display: none;">
+                    <h3>قواعد الرد الآلي</h3><br>
+                    <div class="input-group">
+                        <input type="text" id="auto-trigger" placeholder="عندما يكتب العضو...">
+                        <input type="text" id="auto-response" placeholder="يقوم البوت بالرد بـ...">
+                        <button onclick="window.addAutoRule()" class="btn-save" style="margin-top: 10px;">إضافة
+                            قاعدة</button>
+                    </div>
+                    <div id="auto-rules-list" style="margin-top: 20px;"></div>
+                </div>
+                <div id="admin-announce-tab" class="admin-tab-content" style="display: none;">
+                    <h3>إدارة شريط الإعلانات</h3><br>
+                    <div class="input-group">
+                        <label>نص الإعلان</label>
+                        <input type="text" id="admin-announce-text" placeholder="اكتب خبر عاجل...">
+                        <label>تفعيل</label>
+                        <input type="checkbox" id="admin-announce-active" checked>
+                        <button onclick="window.updateAnnouncement()" class="btn-save" style="margin-top: 10px;">نشر
+                            الإعلان</button>
+                    </div>
+                </div>
+                <!-- logs tab -->
+                <div id="admin-logs-tab" class="admin-tab-content" style="display: none;">
+                    <h3>سجل الأحداث (Audit Logs)</h3>
+                    <div id="audit-log-list" style="display:flex; flex-direction:column; gap:8px; margin-top:10px;">
+                    </div>
+                </div>
+                <!-- roles tab -->
+                <div id="admin-roles-tab" class="admin-tab-content" style="display: none;">
+                    <h3>إدارة الرتب</h3>
+                    <div class="input-group" style="margin-bottom:15px;">
+                        <input type="text" id="new-role-name" placeholder="اسم الرتبة">
+                        <input type="color" id="new-role-color" value="#ffffff" style="height:40px;">
+                        <button class="btn-save" onclick="createRole()">إنشاء</button>
+                    </div>
+                    <div id="roles-list"></div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- DM Modal -->
+    <!-- User Profile Modal -->
+    <!-- Create Channel Modal -->
+    <div id="create-channel-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-card">
+            <header class="modal-header">
+                <h2>إنشاء قناة جديدة</h2>
+                <i class="fas fa-times close-modal"
+                    onclick="document.getElementById('create-channel-modal').style.display='none'"></i>
+            </header>
+            <div class="modal-body">
+                <div class="input-group">
+                    <label>اسم القناة</label>
+                    <input type="text" id="new-channel-name" placeholder="مثال: سواليف">
+                </div>
+                <div class="input-group">
+                    <label>نوع القناة</label>
+                    <select id="new-channel-type" class="modal-input">
+                        <option value="text">نصية #</option>
+                        <option value="voice">صوتية 🔊</option>
+                    </select>
+                </div>
+
+                <h4 style="margin-top:15px; color:#b5bac1;">خيارات خاصة (صوت فقط)</h4>
+
+                <div class="input-group">
+                    <label>كلمة مرور (اختياري - للقفل)</label>
+                    <input type="password" id="new-channel-pass" placeholder="اتركه فارغاً للروم العام">
+                </div>
+                <div class="input-group">
+                    <label>الحد الأقصى للمستخدمين (0 = غير محدود)</label>
+                    <input type="number" id="new-channel-limit" value="0" min="0">
+                </div>
+
+                <div class="modal-actions">
+                    <button class="btn-cancel"
+                        onclick="document.getElementById('create-channel-modal').style.display='none'">إلغاء</button>
+                    <button class="btn-save" id="create-channel-btn">إنشاء</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="profile-card">
+        <div class="profile-banner"></div>
+        <div class="profile-header-info">
+            <div class="profile-avatar-wrapper">
+                <img id="profile-avatar-img" src="" alt="Avatar">
+                <div id="profile-status-indicator" class="profile-status"></div>
+            </div>
+            <div class="profile-badges" id="profile-badges"></div>
+        </div>
+        <div class="profile-body">
+            <div class="profile-name-section">
+                <h2 id="profile-fullname">User Name</h2>
+                <span id="profile-username">@username</span>
+            </div>
+            <div class="profile-bio-section">
+                <h3>نبذة</h3>
+                <p id="profile-bio">No bio set.</p>
+            </div>
+            <div class="profile-stats">
+                <div class="stat-box">
+                    <span class="stat-label">المستوى</span>
+                    <span class="stat-value" id="profile-level">1</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-label">العملات</span>
+                    <span class="stat-value" id="profile-coins">0</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-label">تاريخ الانضمام</span>
+                    <span class="stat-value" id="profile-joined">2026</span>
+                </div>
+            </div>
+            <div class="profile-actions">
+                <button class="btn-primary" id="profile-msg-btn">إرسال رسالة</button>
+                <!-- Admin Actions injected here if needed -->
+                <div id="profile-admin-actions" style="display:none; gap:10px;"></div>
+            </div>
+        </div>
+        <i class="fas fa-times close-profile"
+            onclick="document.getElementById('profile-modal').style.display='none'"></i>
+    </div>
+    </div>
+
+    <!-- DM Modal (Existing) -->
     <div id="dm-modal" class="modal-overlay" style="display: none;">
         <div class="modal-card" style="width: 500px;">
             <header class="modal-header">
@@ -451,6 +557,7 @@
     </div>
 
     <input type="file" id="general-file-input" style="display: none;">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="script.js"></script>
 </body>
 

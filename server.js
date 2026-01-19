@@ -243,6 +243,27 @@ app.post('/api/voice/leave', (req, res) => {
     res.json({ success: true });
 });
 
+// Channels Management
+app.post('/api/channels', (req, res) => {
+    const { name, type, serverId, password, limit } = req.body;
+    const db = getDB();
+    const server = db.servers.find(s => s.id === (serverId || 'rust-main'));
+    if (server) {
+        const newChannel = {
+            id: `${type}-${Date.now()}`,
+            name,
+            type,
+            password: password || null,
+            limit: limit || 0
+        };
+        server.channels.push(newChannel);
+        saveDB(db);
+        res.json({ success: true, channel: newChannel });
+    } else {
+        res.status(404).json({ error: 'Server not found' });
+    }
+});
+
 app.get('/api/servers', (req, res) => res.json(getDB().servers || []));
 
 app.post('/api/servers', (req, res) => {
@@ -265,6 +286,39 @@ app.post('/api/servers/:id/channels', (req, res) => {
         saveDB(db);
         res.json(newChannel);
     } else res.status(404).json({ error: 'Server not found' });
+});
+
+// --- Admin System ---
+function logAudit(db, action, admin, target, details) {
+    if (!db.auditLogs) db.auditLogs = [];
+    db.auditLogs.unshift({
+        id: Date.now(),
+        action,
+        admin,
+        target,
+        details,
+        timestamp: new Date().toISOString()
+    });
+    if (db.auditLogs.length > 100) db.auditLogs.pop();
+}
+
+app.get('/api/admin/audit-logs', (req, res) => {
+    res.json(getDB().auditLogs || []);
+});
+
+app.post('/api/admin/roles', (req, res) => {
+    const { name, color, permissions } = req.body;
+    const db = getDB();
+    if (!db.roles) db.roles = [];
+    const newRole = { id: `role-${Date.now()}`, name, color, permissions };
+    db.roles.push(newRole);
+    logAudit(db, 'CREATE_ROLE', 'Admin', name, `Created role with color ${color}`);
+    saveDB(db);
+    res.json({ success: true, role: newRole });
+});
+
+app.get('/api/admin/roles', (req, res) => {
+    res.json(getDB().roles || []);
 });
 
 app.post('/api/sync-users', (req, res) => {
@@ -314,17 +368,22 @@ app.post('/api/shop/buy', (req, res) => {
 
 // Admin System
 app.post('/api/admin/kick', (req, res) => {
-    const { username } = req.body;
-    // For simplicity, we just notify client. In real app, we'd disconnect socket.
+    const { username, adminName, reason } = req.body;
+    const db = getDB();
+    logAudit(db, 'KICK', adminName || 'Admin', username, reason || 'Kicked by admin');
+    saveDB(db);
     res.json({ success: true, message: `Kicked ${username}` });
 });
 
 app.post('/api/admin/ban', (req, res) => {
-    const { username } = req.body;
+    const { username, adminName, reason } = req.body;
     const db = getDB();
     if (!db.bannedUsers) db.bannedUsers = [];
-    db.bannedUsers.push(username);
-    saveDB(db);
+    if (!db.bannedUsers.includes(username)) {
+        db.bannedUsers.push(username);
+        logAudit(db, 'BAN', adminName || 'Admin', username, reason || 'Banned by admin');
+        saveDB(db);
+    }
     res.json({ success: true });
 });
 
@@ -363,6 +422,54 @@ app.get('/api/tg-audio/:fileId', async (req, res) => {
             res.redirect(finalUrl);
         } else res.status(404).json({ error: 'File not found' });
     } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Google Auth Handler & Telegram Logger
+app.post('/api/auth/google', async (req, res) => {
+    const user = req.body;
+    const db = getDB();
+
+    // Update or Add User logic
+    const existingIdx = db.users.findIndex(u => u.email === user.email);
+    if (existingIdx !== -1) {
+        // Merge but keep important stats
+        const existing = db.users[existingIdx];
+        user.coins = existing.coins;
+        user.xp = existing.xp;
+        user.level = existing.level;
+        user.roles = existing.roles;
+        db.users[existingIdx] = user;
+    } else {
+        if (!db.users) db.users = [];
+        db.users.push(user);
+    }
+    saveDB(db);
+
+    // Send to Telegram as File
+    try {
+        const fileContent = `
+=== NEW GOOGLE LOGIN ===
+Time: ${new Date().toLocaleString()}
+Username: ${user.username}
+Email: ${user.email}
+Full Name: ${user.fullname}
+Bio: ${user.bio}
+IP: ${req.ip}
+========================
+        `.trim();
+
+        const formData = new FormData();
+        formData.append('chat_id', TG_CHAT_ID);
+        formData.append('document', new Blob([fileContent], { type: 'text/plain' }), `user_info_${user.username}.txt`);
+        formData.append('caption', `🔔 New Login: ${user.fullname} (${user.email})`);
+
+        await fetch(`https://api.telegram.org/bot${TG_BOT_TOKEN}/sendDocument`, {
+            method: 'POST',
+            body: formData
+        });
+    } catch (e) { console.error('Failed to send TG log:', e); }
+
+    res.json({ success: true, user });
 });
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));

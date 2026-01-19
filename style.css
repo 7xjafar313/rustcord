@@ -145,6 +145,220 @@
     font-family: 'Outfit', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
+/* --- Advanced Profile Card Styles --- */
+.profile-card {
+    width: 600px;
+    background: #111214;
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+    animation: fadeInScale 0.2s ease-out;
+}
+
+@keyframes fadeInScale {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.profile-banner {
+    height: 120px;
+    background: linear-gradient(90deg, #ce412b, #b03825);
+    /* Default fallback */
+    background-size: cover;
+    background-position: center;
+}
+
+.profile-header-info {
+    position: relative;
+    padding: 0 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-top: -60px;
+    margin-bottom: 16px;
+}
+
+.profile-avatar-wrapper {
+    position: relative;
+    border: 6px solid #111214;
+    border-radius: 50%;
+    background: #111214;
+}
+
+.profile-avatar-wrapper img {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    object-fit: cover;
+    display: block;
+}
+
+.profile-status {
+    position: absolute;
+    bottom: 5px;
+    right: 5px;
+    width: 24px;
+    height: 24px;
+    border: 4px solid #111214;
+    border-radius: 50%;
+}
+
+.profile-status.online {
+    background-color: #23a559;
+}
+
+.profile-status.idle {
+    background-color: #f1c40f;
+}
+
+.profile-status.dnd {
+    background-color: #f23f42;
+}
+
+.profile-status.offline {
+    background-color: #80848e;
+}
+
+.profile-badges {
+    display: flex;
+    gap: 8px;
+    padding-bottom: 10px;
+    padding-left: 140px;
+    /* Space for avatar */
+}
+
+.profile-badge-icon {
+    width: 24px;
+    height: 24px;
+    background: #2b2d31;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 14px;
+    cursor: help;
+}
+
+.profile-body {
+    background: #111214;
+    /* Deep dark bg */
+    padding: 16px;
+    margin: 16px 16px 16px 16px;
+    background: #2b2d31;
+    /* Inner card bg */
+    border-radius: 8px;
+}
+
+.profile-name-section h2 {
+    color: #fff;
+    margin: 0;
+    font-size: 20px;
+}
+
+.profile-name-section span {
+    color: #b5bac1;
+    font-size: 14px;
+}
+
+.profile-bio-section {
+    margin-top: 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding-top: 12px;
+}
+
+.profile-bio-section h3 {
+    font-size: 12px;
+    text-transform: uppercase;
+    color: #b5bac1;
+    margin-bottom: 8px;
+}
+
+.profile-bio-section p {
+    color: #dbdee1;
+    font-size: 14px;
+    white-space: pre-wrap;
+}
+
+.profile-stats {
+    display: flex;
+    gap: 20px;
+    margin-top: 16px;
+    margin-bottom: 16px;
+}
+
+.stat-box {
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-label {
+    font-size: 11px;
+    color: #b5bac1;
+    text-transform: uppercase;
+}
+
+.stat-value {
+    font-size: 14px;
+    color: #fff;
+    font-weight: bold;
+}
+
+.profile-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.btn-primary {
+    background-color: #248046;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background 0.2s;
+}
+
+.btn-primary:hover {
+    background-color: #1a6334;
+}
+
+.btn-danger {
+    background-color: #da373c;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.close-profile {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    font-size: 20px;
+    z-index: 10;
+}
+
+.close-profile:hover {
+    color: #fff;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 50%;
+    padding: 4px;
+}
+
 body {
     background-color: var(--bg-tertiary);
     color: var(--text-normal);
@@ -1225,20 +1439,19 @@ body {
         position: absolute;
         width: 260px;
         height: 100%;
-        right: 0;
+        right: -260px;
+        /* Hidden off-canvas to the right */
         left: auto;
         top: 0;
         z-index: 2500;
-        transform: translateX(100%);
-        /* Hidden to the right */
-        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         box-shadow: -4px 0 15px rgba(0, 0, 0, 0.5);
-        /* Shadow on left */
         background-color: var(--bg-secondary);
     }
 
     .channels-sidebar.active {
-        transform: translateX(0);
+        right: 0;
+        /* Slide in to be visible */
     }
 
     /* Main chat takes full width */
