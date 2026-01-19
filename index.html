@@ -151,7 +151,7 @@
                     <button onclick="window.startWatchTogether()">بدء</button>
                 </div>
             </div>
-            <div class="video-grid" id="video-grid"></div>
+            <div class="video-grid" id="voice-video-grid"></div>
             <div class="user-info">
                 <img src="https://via.placeholder.com/32" alt="Avatar">
                 <div class="user-details">
@@ -170,111 +170,89 @@
                 <i class="fas fa-headphones" title="كتم السمع"></i>
                 <i class="fas fa-cog" title="الإعدادات"></i>
             </div>
-    </div>
-    </aside>
+        </aside>
 
-    <!-- Main Chat Area -->
-    <main class="chat-area">
-        <header class="chat-header">
-            <div class="header-info">
-                <i class="fas fa-hashtag"></i>
-                <h2>العام</h2>
-            </div>
-            <div class="header-actions">
-                <i class="fas fa-bell"></i>
-                <i class="fas fa-thumbtack"></i>
-                <i class="fas fa-users"></i>
-                <div class="search-bar">
-                    <input type="text" placeholder="بحث">
-                    <i class="fas fa-search"></i>
+        <!-- Main Chat Area -->
+        <main class="chat-area">
+            <header class="chat-header">
+                <div class="header-info">
+                    <i class="fas fa-hashtag"></i>
+                    <h2>العام</h2>
                 </div>
-                <i class="fas fa-question-circle"></i>
-            </div>
-        </header>
-        <!-- Video Grid for Calls -->
-        <div id="video-grid" class="video-grid" style="display: none;"></div>
-        <div class="messages-container">
-            <div class="message">
-                <img src="https://via.placeholder.com/40" alt="Avatar" class="message-avatar">
-                <div class="message-content">
-                    <div class="message-header">
-                        <span class="message-author">المطور</span>
-                        <span class="message-timestamp">اليوم الساعة 10:00 م</span>
+                <div class="header-actions">
+                    <i class="fas fa-bell"></i>
+                    <i class="fas fa-thumbtack"></i>
+                    <i class="fas fa-users"></i>
+                    <div class="search-bar">
+                        <input type="text" placeholder="بحث">
+                        <i class="fas fa-search"></i>
                     </div>
-                    <div class="message-text">أهلاً بكم في راست كورد! أفضل بديل لديسكورد.</div>
+                    <i class="fas fa-question-circle"></i>
                 </div>
-            </div>
-            <div class="message">
-                <img src="https://via.placeholder.com/40" alt="Avatar" class="message-avatar">
-                <div class="message-content">
-                    <div class="message-header">
-                        <span class="message-author">زائر</span>
-                        <span class="message-timestamp">اليوم الساعة 10:05 م</span>
+            </header>
+            <!-- Video Grid for Calls -->
+            <div id="video-grid" class="video-grid" style="display: none;"></div>
+            <div class="messages-container"></div>
+            <div class="message-input-wrapper">
+                <div id="reply-preview" class="reply-preview" style="display: none;">
+                    <span id="replying-to-text"></span>
+                    <i class="fas fa-times" id="cancel-reply"></i>
+                </div>
+                <div id="typing-indicator" class="typing-indicator"></div>
+                <div id="gif-picker" class="gif-picker" style="display: none;">
+                    <div class="gif-search">
+                        <input type="text" id="gif-search-input" placeholder="بحث عن GIF...">
                     </div>
-                    <div class="message-text">التصميم يبدو رائعاً جداً.</div>
+                    <div class="gif-results" id="gif-results"></div>
+                </div>
+                <div class="message-input">
+                    <i class="fas fa-plus-circle" id="add-file-btn"></i>
+                    <input type="text" id="chat-input" placeholder="إرسال رسالة إلى #العام">
+                    <div class="input-icons">
+                        <i class="fas fa-microphone-alt" id="voice-record-btn" title="رسالة صوتية"></i>
+                        <i class="fas fa-gift" id="gif-btn" title="Giphy"></i>
+                        <i class="fas fa-sticky-note" id="sticker-btn"></i>
+                        <i class="fas fa-smile" id="emoji-btn"></i>
+                    </div>
                 </div>
             </div>
-        </div>
-        <div class="message-input-wrapper">
-            <div id="reply-preview" class="reply-preview" style="display: none;">
-                <span id="replying-to-text"></span>
-                <i class="fas fa-times" id="cancel-reply"></i>
-            </div>
-            <div id="typing-indicator" class="typing-indicator"></div>
-            <div id="gif-picker" class="gif-picker" style="display: none;">
-                <div class="gif-search">
-                    <input type="text" id="gif-search-input" placeholder="بحث عن GIF...">
+            <!-- Music Bot Bar -->
+            <div id="music-player-bar" class="music-player-bar" style="display: none;">
+                <div class="music-info">
+                    <i class="fas fa-music"></i>
+                    <span id="music-title">جاري التشغيل: ...</span>
                 </div>
-                <div class="gif-results" id="gif-results"></div>
-            </div>
-            <div class="message-input">
-                <i class="fas fa-plus-circle" id="add-file-btn"></i>
-                <input type="text" id="chat-input" placeholder="إرسال رسالة إلى #العام">
-                <div class="input-icons">
-                    <i class="fas fa-microphone-alt" id="voice-record-btn" title="رسالة صوتية"></i>
-                    <i class="fas fa-gift" id="gif-btn" title="Giphy"></i>
-                    <i class="fas fa-sticky-note" id="sticker-btn"></i>
-                    <i class="fas fa-smile" id="emoji-btn"></i>
+                <div class="music-controls">
+                    <i class="fas fa-stop" id="music-stop" title="إيقاف"></i>
                 </div>
+                <div id="yt-player-container" style="display: none;"></div>
             </div>
-        </div>
-        <!-- Music Bot Bar -->
-        <div id="music-player-bar" class="music-player-bar" style="display: none;">
-            <div class="music-info">
-                <i class="fas fa-music"></i>
-                <span id="music-title">جاري التشغيل: ...</span>
+        </main>
+
+        <!-- Pinned Messages Sidebar (Hidden by default) -->
+        <aside id="pinned-sidebar" class="pinned-sidebar" style="display: none;">
+            <header class="pinned-header">
+                <h3><i class="fas fa-thumbtack"></i> الرسائل المثبتة</h3>
+                <i class="fas fa-times" id="close-pinned"></i>
+            </header>
+            <div id="pinned-messages-list"></div>
+        </aside>
+
+        <!-- Members Sidebar -->
+        <aside class="members-sidebar">
+            <div class="members-group">
+                <h3 class="group-title">متصل — <span id="online-count">0</span></h3>
+                <div id="members-online-list"></div>
             </div>
-            <div class="music-controls">
-                <i class="fas fa-stop" id="music-stop" title="إيقاف"></i>
+            <div class="members-group">
+                <h3 class="group-title">غير متصل — <span id="offline-count">0</span></h3>
+                <div id="members-offline-list"></div>
             </div>
-            <div id="yt-player-container" style="display: none;"></div>
-        </div>
-    </main>
+        </aside>
 
-    <!-- Pinned Messages Sidebar (Hidden by default) -->
-    <aside id="pinned-sidebar" class="pinned-sidebar" style="display: none;">
-        <header class="pinned-header">
-            <h3><i class="fas fa-thumbtack"></i> الرسائل المثبتة</h3>
-            <i class="fas fa-times" id="close-pinned"></i>
-        </header>
-        <div id="pinned-messages-list"></div>
-    </aside>
-
-    <!-- Members Sidebar -->
-    <aside class="members-sidebar">
-        <div class="members-group">
-            <h3 class="group-title">متصل — <span id="online-count">0</span></h3>
-            <div id="members-online-list"></div>
-        </div>
-        <div class="members-group">
-            <h3 class="group-title">غير متصل — <span id="offline-count">0</span></h3>
-            <div id="members-offline-list"></div>
-        </div>
-    </aside>
-
-    <!-- Notification Sound -->
-    <audio id="notif-sound" src="https://www.myinstants.com/media/sounds/discord-notification.mp3"
-        preload="auto"></audio>
+        <!-- Notification Sound -->
+        <audio id="notif-sound" src="https://www.myinstants.com/media/sounds/discord-notification.mp3"
+            preload="auto"></audio>
     </div>
 
     <!-- Modals -->

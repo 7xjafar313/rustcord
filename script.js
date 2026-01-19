@@ -413,7 +413,7 @@ document.addEventListener('DOMContentLoaded', () => {
         div.id = `msg-${id}`;
 
         const roleClass = getRoleClass(author);
-        const avatar = (author === myUsername && currentUser.avatar) ? currentUser.avatar : `https://ui-avatars.com/api/?name=${author}&background=random`;
+        const avatar = (author === myUsername && currentUser && currentUser.avatar) ? currentUser.avatar : `https://ui-avatars.com/api/?name=${author || 'User'}&background=random`;
 
         const textContent = document.createElement('div');
         textContent.className = 'message-text-content';
@@ -464,9 +464,9 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
             <div class="message-actions">
                 <i class="fas fa-smile" onclick="window.showEmojiPick('${id}')" title="تفاعل"></i>
-                <i class="fas fa-reply" onclick="window.prepReply('${id}', '${author}', '${text.replace(/'/g, "\\'")}')" title="رد"></i>
+                <i class="fas fa-reply" onclick="window.prepReply('${id}', '${author}', '${text.replace(/'/g, "\\'").replace(/\n/g, "\\n")}')" title="رد"></i>
                 <i class="fas fa-thumbtack" onclick="window.togglePin('${id}', ${!isPinned})" title="${isPinned ? 'إلغاء التثبيت' : 'تثبيت'}"></i>
-                ${(author === myUsername || isAdmin) ? `<i class="fas fa-edit" onclick="window.editMessage('${id}', '${text.replace(/'/g, "\\'")}')"></i>` : ''}
+                ${(author === myUsername || isAdmin) ? `<i class="fas fa-edit" onclick="window.editMessage('${id}', '${text.replace(/'/g, "\\'").replace(/\n/g, "\\n")}')"></i>` : ''}
                 ${(author === myUsername || isAdmin) ? `<i class="fas fa-trash" onclick="window.deleteMessage('${id}')"></i>` : ''}
             </div>
         `;
@@ -529,7 +529,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .replace(/`(.*?)`/g, '<code>$1</code>')
             .replace(/@(\w+)/g, '<span class="mention" onclick="window.openDM(\'$1\')">@$1</span>');
     }
-    function getRoleClass(u) { return (u === 'sww' || u.includes('المطور')) ? 'role-owner' : (u.toLowerCase().includes('admin') ? 'role-admin' : 'role-member'); }
+    function getRoleClass(u) { if (!u) return 'role-member'; return (u === 'sww' || u.includes('المطور')) ? 'role-owner' : (u.toLowerCase().includes('admin') ? 'role-admin' : 'role-member'); }
     function getRoleBadge(u) { const c = getRoleClass(u); return c === 'role-owner' ? '<span class="role-badge badge-owner">المطور</span>' : (c === 'role-admin' ? '<span class="role-badge badge-admin">إدارة</span>' : ''); }
 
     // --- GIF Picker ---
