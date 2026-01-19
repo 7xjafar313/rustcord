@@ -9,7 +9,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let replyingToId = null;
     let typingUsers = new Set();
     let isCameraOn = false, isScreenSharing = false;
-    let localStream = null, peer = null, currentCall = null;
+    let localStream = null, peer = null;
+    const activeCalls = {};
     const audioContexts = {};
 
     // --- Elements ---
@@ -141,6 +142,112 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('music-stop').onclick = () => {
         sendMessageToTelegram(`[SYSTEM]:MUSIC_STOP`);
     };
+
+    // --- Media & PeerJS Core ---
+    function initPeer() {
+        if (peer) return;
+        peer = new Peer();
+        peer.on('open', (id) => console.log('Peer ID:', id));
+        peer.on('call', (call) => {
+            console.log('Receiving call from:', call.peer);
+            call.answer(localStream || new MediaStream());
+            call.on('stream', (rs) => handleRemoteStream(rs, call.peer));
+            activeCalls[call.peer] = call;
+        });
+        peer.on('error', (err) => console.error('PeerJS Error:', err));
+    }
+
+    function handleRemoteStream(stream, pid) {
+        console.log('Handling stream for:', pid);
+        let container = document.getElementById(`container-${pid}`);
+        if (!container) {
+            container = document.createElement('div');
+            container.className = 'video-item';
+            container.id = `container-${pid}`;
+
+            const v = document.createElement('video');
+            v.id = `video-${pid}`;
+            v.autoplay = true;
+            v.playsinline = true;
+
+            const lbl = document.createElement('div');
+            lbl.className = 'video-label';
+            lbl.innerText = `مستخدم #${pid.substring(0, 4)}`;
+
+            container.appendChild(v);
+            container.appendChild(lbl);
+            videoGrid.appendChild(container);
+        }
+
+        const videoEl = document.getElementById(`video-${pid}`);
+        videoEl.srcObject = stream;
+
+        // Show grid if there's at least one video track
+        if (stream.getVideoTracks().length > 0) {
+            videoGrid.style.display = 'grid';
+            container.style.display = 'block';
+        } else {
+            // It's audio only, but we keep the element for sound
+            // Maybe hide the container if it's just audio? 
+            // In Discord, audio-only users don't show in the video grid unless they have a cam.
+            container.style.display = 'none';
+        }
+    }
+
+    async function broadcastStreamUpdate() {
+        if (peer && peer.id && currentChannel) {
+            await sendMessageToTelegram(`[SYSTEM]:VOICE_JOIN|${peer.id}|${currentChannel}|${currentUser.fullname || currentUser.username}|${currentUser.avatar || ''}`);
+        }
+    }
+
+    async function replaceTracksInCalls(newStream) {
+        const videoTrack = newStream.getVideoTracks()[0];
+        const audioTrack = newStream.getAudioTracks()[0];
+
+        for (let pid in activeCalls) {
+            const call = activeCalls[pid];
+            if (call.peerConnection) {
+                const senders = call.peerConnection.getSenders();
+                const vSender = senders.find(s => s.track && s.track.kind === 'video');
+                const aSender = senders.find(s => s.track && s.track.kind === 'audio');
+
+                if (vSender && videoTrack) vSender.replaceTrack(videoTrack);
+                if (aSender && audioTrack) aSender.replaceTrack(audioTrack);
+            }
+        }
+    }
+
+    async function joinVoiceChannel(name) {
+        if (currentChannel === name && voicePanel.style.display === 'flex') return;
+        initPeer();
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isCameraOn });
+            voicePanel.style.display = 'flex';
+            voicePanel.querySelector('.channel-name').innerText = name;
+            currentChannel = name;
+            broadcastStreamUpdate();
+        } catch (e) {
+            console.error('Mic Access Error:', e);
+            alert('تعذر الوصول للميكروفون. تأكد من إعطاء الإذن.');
+        }
+    }
+
+    async function leaveVoice() {
+        if (peer && peer.id && currentChannel) {
+            await sendMessageToTelegram(`[SYSTEM]:VOICE_LEAVE|${peer.id}|${currentChannel}`);
+        }
+        if (localStream) {
+            localStream.getTracks().forEach(t => t.stop());
+            localStream = null;
+        }
+        for (let pid in activeCalls) {
+            activeCalls[pid].close();
+            delete activeCalls[pid];
+        }
+        videoGrid.style.display = 'none';
+        videoGrid.innerHTML = '';
+        voicePanel.style.display = 'none';
+    }
 
     document.querySelector('.user-info').onclick = () => {
         document.getElementById('settings-fullname').value = currentUser.fullname || '';
@@ -438,6 +545,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (text.startsWith('[SYSTEM]:VOICE_JOIN|')) {
             const parts = text.split('|');
             const peerId = parts[1], rm = parts[2], un = parts[3], av = parts[4];
+
+            // Sync voice user list in sidebar
             const list = document.getElementById(`voice-users-${rm}`);
             if (list && !document.getElementById(`voice-user-${peerId}`)) {
                 const item = document.createElement('div');
@@ -446,63 +555,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 item.innerHTML = `<img src="${av || `https://ui-avatars.com/api/?name=${un}&background=random`}"><span>${un}</span>`;
                 list.appendChild(item);
             }
+
+            // Call the joining user if we are in the same room
             if (peer && peer.id && peerId !== peer.id && localStream && rm === currentChannel) {
+                console.log('Calling peer:', peerId);
                 const call = peer.call(peerId, localStream);
-                call.on('stream', (rs) => handleRemoteStream(rs, peerId));
-                currentCall = call;
+                if (call) {
+                    call.on('stream', (rs) => handleRemoteStream(rs, peerId));
+                    activeCalls[peerId] = call;
+                }
             }
         } else if (text.startsWith('[SYSTEM]:VOICE_LEAVE|')) {
             const pid = text.split('|')[1];
             const el = document.getElementById(`voice-user-${pid}`);
             if (el) el.remove();
+
+            const container = document.getElementById(`container-${pid}`);
+            if (container) container.remove();
+
+            if (activeCalls[pid]) {
+                activeCalls[pid].close();
+                delete activeCalls[pid];
+            }
         } else if (text.startsWith('[SYSTEM]:TYPING|')) { typingUsers.add(text.split('|')[1]); updateTypingUI(); }
         else if (text.startsWith('[SYSTEM]:STOP_TYPING|')) { typingUsers.delete(text.split('|')[1]); updateTypingUI(); }
         else if (text.startsWith('[SYSTEM]:MUSIC_PLAY|')) { playMusicSync(text.split('|')[1], false); }
         else if (text.startsWith('[SYSTEM]:MUSIC_PLAY_TG|')) { playMusicSync(text.split('|')[1], true); }
         else if (text === '[SYSTEM]:MUSIC_STOP') { stopMusicSync(); }
-    }
-
-    // --- PeerJS & Streaming Logic ---
-    function initPeer() {
-        if (peer) return;
-        peer = new Peer();
-        peer.on('open', (id) => console.log('Peer ID:', id));
-        peer.on('call', (call) => {
-            call.answer(localStream || new MediaStream());
-            call.on('stream', (rs) => handleRemoteStream(rs, call.peer));
-        });
-    }
-
-    function handleRemoteStream(stream, pid) {
-        if (stream.getVideoTracks().length > 0) {
-            videoGrid.style.display = 'grid';
-            let v = document.getElementById(`video-${pid}`);
-            if (!v) {
-                const div = document.createElement('div'); div.className = 'video-item'; div.id = `container-${pid}`;
-                v = document.createElement('video'); v.id = `video-${pid}`; v.autoplay = true; v.playsinline = true;
-                const lbl = document.createElement('div'); lbl.className = 'video-label'; lbl.innerText = `مستخدم #${pid.substring(0, 4)}`;
-                div.appendChild(v); div.appendChild(lbl); videoGrid.appendChild(div);
-            }
-            v.srcObject = stream;
-        }
-    }
-
-    async function joinVoiceChannel(name) {
-        if (currentChannel === name && voicePanel.style.display === 'flex') return;
-        initPeer();
-        try {
-            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            voicePanel.style.display = 'flex';
-            voicePanel.querySelector('.channel-name').innerText = name;
-            currentChannel = name;
-            if (peer.id) await sendMessageToTelegram(`[SYSTEM]:VOICE_JOIN|${peer.id}|${name}|${currentUser.fullname || currentUser.username}|${currentUser.avatar || ''}`);
-        } catch (e) { alert('بإمكانك الدخول لكن الميكروفون معطل'); }
-    }
-
-    async function leaveVoice() {
-        if (peer && peer.id && currentChannel) await sendMessageToTelegram(`[SYSTEM]:VOICE_LEAVE|${peer.id}|${currentChannel}`);
-        if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
-        videoGrid.style.display = 'none'; videoGrid.innerHTML = ''; voicePanel.style.display = 'none';
     }
 
     // --- Interactive Listeners ---
@@ -520,38 +599,118 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     document.getElementById('disconnect-voice').onclick = leaveVoice;
-    document.getElementById('toggle-camera').onclick = async () => {
-        isCameraOn = !isCameraOn;
-        const stream = await navigator.mediaDevices.getUserMedia({ video: isCameraOn, audio: true });
-        localStream = stream;
-        updateLocalVideo();
+
+    document.getElementById('toggle-camera').onclick = async function () {
+        try {
+            isCameraOn = !isCameraOn;
+            this.classList.toggle('active', isCameraOn);
+
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: isCameraOn,
+                audio: true
+            });
+
+            if (localStream) {
+                // If we are already in a call, we replace the tracks
+                replaceTracksInCalls(stream);
+                localStream.getTracks().forEach(t => t.stop());
+            }
+            localStream = stream;
+            updateLocalVideo();
+            broadcastStreamUpdate(); // Notify others to refresh if needed
+        } catch (e) {
+            console.error('Camera Access Error:', e);
+            isCameraOn = false;
+            this.classList.remove('active');
+        }
+    };
+
+    document.getElementById('toggle-screen').onclick = async function () {
+        try {
+            isScreenSharing = !isScreenSharing;
+            this.classList.toggle('active', isScreenSharing);
+
+            let stream;
+            if (isScreenSharing) {
+                stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+                stream.getVideoTracks()[0].onended = () => {
+                    isScreenSharing = false;
+                    this.classList.remove('active');
+                    // Fallback to camera or mic only
+                    navigator.mediaDevices.getUserMedia({ video: isCameraOn, audio: true }).then(s => {
+                        replaceTracksInCalls(s);
+                        localStream = s;
+                        updateLocalVideo();
+                    });
+                };
+            } else {
+                stream = await navigator.mediaDevices.getUserMedia({ video: isCameraOn, audio: true });
+            }
+
+            replaceTracksInCalls(stream);
+            if (localStream) localStream.getTracks().forEach(t => t.stop());
+            localStream = stream;
+            updateLocalVideo();
+            broadcastStreamUpdate();
+        } catch (e) {
+            console.error('Screen Share Error:', e);
+            isScreenSharing = false;
+            this.classList.remove('active');
+        }
     };
 
     function updateLocalVideo() {
         let v = document.getElementById('local-video');
-        if (isCameraOn) {
+        if (isCameraOn || isScreenSharing) {
             videoGrid.style.display = 'grid';
             if (!v) {
-                const div = document.createElement('div'); div.className = 'video-item'; div.id = 'container-local';
-                v = document.createElement('video'); v.id = 'local-video'; v.autoplay = true; v.muted = true;
-                div.appendChild(v); videoGrid.prepend(div);
+                const div = document.createElement('div');
+                div.className = 'video-item';
+                div.id = 'container-local';
+                v = document.createElement('video');
+                v.id = 'local-video';
+                v.autoplay = true;
+                v.muted = true;
+                v.playsinline = true;
+                const lbl = document.createElement('div');
+                lbl.className = 'video-label';
+                lbl.innerText = 'أنت';
+                div.appendChild(v);
+                div.appendChild(lbl);
+                videoGrid.prepend(div);
             }
             v.srcObject = localStream;
         } else {
-            const el = document.getElementById('container-local'); if (el) el.remove();
+            const el = document.getElementById('container-local');
+            if (el) el.remove();
+            if (videoGrid.querySelectorAll('.video-item').length === 0) {
+                videoGrid.style.display = 'none';
+            }
         }
     }
 
     // Control Buttons
-    document.querySelector('.fa-microphone').onclick = (e) => {
-        e.target.classList.toggle('fa-microphone-slash');
-        if (localStream) localStream.getAudioTracks()[0].enabled = !e.target.classList.contains('fa-microphone-slash');
+    document.querySelector('.fa-microphone').parentElement.onclick = function () {
+        const icon = this.querySelector('i');
+        icon.classList.toggle('fa-microphone-slash');
+        if (localStream) {
+            localStream.getAudioTracks()[0].enabled = !icon.classList.contains('fa-microphone-slash');
+        }
+        this.classList.toggle('active', icon.classList.contains('fa-microphone-slash'));
     };
-    document.querySelector('.fa-headphones').onclick = (e) => {
-        e.target.classList.toggle('fa-volume-mute');
-        messagesContainer.querySelectorAll('video, audio').forEach(el => el.muted = e.target.classList.contains('fa-volume-mute'));
+
+    document.querySelector('.fa-headphones').parentElement.onclick = function () {
+        const icon = this.querySelector('i');
+        icon.classList.toggle('fa-volume-mute');
+        const isDeaf = icon.classList.contains('fa-volume-mute');
+        this.classList.toggle('active', isDeaf);
+
+        document.querySelectorAll('video, audio').forEach(el => {
+            if (el.id !== 'local-video') el.muted = isDeaf;
+        });
     };
-    document.querySelector('.fa-cog').onclick = () => document.querySelector('.user-info').click();
+
+    document.querySelector('.fa-cog').parentElement.onclick = () => document.querySelector('.user-info').click();
 
     function updateTypingUI() {
         const u = Array.from(typingUsers).filter(x => x !== myUsername);
