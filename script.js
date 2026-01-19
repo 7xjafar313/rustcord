@@ -12,6 +12,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let localStream = null, peer = null;
     const activeCalls = {};
     const audioContexts = {};
+    let currentDMPeer = null;
+    let autoRules = JSON.parse(localStorage.getItem('rust_cord_auto_rules')) || [];
+    let mediaRecorder = null, audioChunks = [];
 
     // --- Elements ---
     const authScreen = document.getElementById('auth-screen'), mainApp = document.getElementById('main-app');
@@ -35,12 +38,26 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelector('.user-tag').innerText = `@${user.username}`;
         if (user.avatar) document.querySelector('.user-info img').src = user.avatar;
 
+        // Update Level & Coins UI
+        document.getElementById('user-lvl').innerText = user.level || 1;
+        document.getElementById('user-coins').innerText = user.coins || 0;
+
         applyTheme(user.theme || 'dark-rust');
+        fetchAnnouncement();
 
         authScreen.style.display = 'none';
         mainApp.style.display = 'flex';
         initServers();
         fetchUsers();
+    }
+
+    async function fetchAnnouncement() {
+        const res = await fetch('/api/announcement');
+        const data = await res.json();
+        if (data && data.active) {
+            document.getElementById('announcement-banner').style.display = 'flex';
+            document.getElementById('announcement-text').innerText = data.text;
+        }
     }
 
     function applyTheme(theme) {
@@ -105,38 +122,46 @@ document.addEventListener('DOMContentLoaded', () => {
         musicPlayerBar.style.display = 'flex';
         musicTitle.innerText = `جاري تشغيل: ${query}`;
 
+        // Add "Music Bot" to the current voice channel list visually
+        if (currentChannel) {
+            const list = document.getElementById(`voice-users-${currentChannel}`);
+            if (list && !document.getElementById('voice-user-bot')) {
+                const item = document.createElement('div');
+                item.className = 'voice-user-item bot-user';
+                item.id = 'voice-user-bot';
+                item.innerHTML = `<img src="https://img.icons8.com/fluency/48/bot.png"><span>Music Bot 🤖</span>`;
+                list.appendChild(item);
+            }
+        }
+
         if (isTg) {
-            // Logic to fetch from Telegram via BOT_TOKEN getUpdates or similar
-            // Since we can't reliably get history without a UserBot, 
-            // we will search for any audio files the bot has seen recently in its updates
             try {
                 const botToken = '6780979570:AAEpS358Uxk_FuegiXu80-ElfxnVFE_AQrU';
                 const res = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates`);
                 const data = await res.json();
-
-                // Filter updates for audio files from the specified channel username if possible
-                // Or just the latest audio files the bot has received
                 let audioFiles = data.result
                     .filter(u => u.message && u.message.audio)
                     .map(u => ({ id: u.message.audio.file_id, name: u.message.audio.title || 'صوت من تيليجرام' }));
 
                 if (audioFiles.length > 0) {
-                    const audio = audioFiles[0]; // Play the latest one
+                    const audio = audioFiles[0];
                     musicTitle.innerText = `تشغيل من تيليجرام: ${audio.name}`;
-                    ytContainer.innerHTML = `<audio controls autoplay src="/api/tg-audio/${audio.id}" style="width:100%; height:30px;"></audio>`;
+                    ytContainer.innerHTML = `<audio id="bot-audio-player" controls autoplay src="/api/tg-audio/${audio.id}" style="width:100%; height:30px;"></audio>`;
                 } else {
-                    musicTitle.innerText = `⚠️ لم يتم العثور على صوتيات في @${query.replace('@', '')}`;
+                    musicTitle.innerText = `⚠️ لا توجد صوتيات في @${query.replace('@', '')}`;
                     setTimeout(stopMusicSync, 3000);
                 }
             } catch (e) { console.error(e); stopMusicSync(); }
         } else {
-            ytContainer.innerHTML = `<iframe width="200" height="112" src="https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(query)}&autoplay=1" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+            ytContainer.innerHTML = `<iframe id="bot-video-player" width="200" height="112" src="https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(query)}&autoplay=1" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
         }
     }
 
     function stopMusicSync() {
         musicPlayerBar.style.display = 'none';
         ytContainer.innerHTML = '';
+        const botEl = document.getElementById('voice-user-bot');
+        if (botEl) botEl.remove();
     }
 
     document.getElementById('music-stop').onclick = () => {
@@ -253,9 +278,24 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('settings-fullname').value = currentUser.fullname || '';
         document.getElementById('settings-bio').value = currentUser.bio || '';
         document.getElementById('settings-avatar').value = currentUser.avatar || '';
+        document.getElementById('settings-avatar-preview').src = currentUser.avatar || 'https://via.placeholder.com/60';
         document.getElementById('settings-status').value = currentUser.status || 'online';
         document.getElementById('settings-theme').value = currentUser.theme || 'dark-rust';
+        document.getElementById('settings-custom-status').value = currentUser.customStatus || '';
         settingsModal.style.display = 'flex';
+    };
+
+    // --- Profile Image Upload ---
+    document.getElementById('avatar-file-input').onchange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                document.getElementById('settings-avatar-preview').src = ev.target.result;
+                document.getElementById('settings-avatar').value = ev.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
     };
 
     settingsForm.onsubmit = async (e) => {
@@ -286,18 +326,34 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('cancel-settings').onclick = () => settingsModal.style.display = 'none';
 
     // --- Messaging Core ---
-    async function sendMessage(text, imageUrl = null, fileData = null, fileName = null) {
+    async function sendMessage(text, imageUrl = null, fileData = null, fileName = null, audioData = null) {
         try {
             // Check for music commands
             const isMusic = await handleMusicCommand(text);
             if (isMusic) return;
 
+            // Detect URL for Smart Preview
+            const urlMatch = text.match(/https?:\/\/[^\s]+/);
+            let linkPreview = null;
+            if (urlMatch && !audioData) {
+                const res = await fetch(`/api/link-preview?url=${encodeURIComponent(urlMatch[0])}`);
+                linkPreview = await res.json();
+            }
+
+            // Auto-Responder logic
+            autoRules.forEach(rule => {
+                if (text === rule.trigger) {
+                    setTimeout(() => addMessage('System Bot 🤖', rule.response, false, null, Date.now() + 1), 500);
+                }
+            });
+
             await fetch('/api/messages', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ author: myUsername, text, imageUrl, replyTo: replyingToId, fileData, fileName })
+                body: JSON.stringify({ author: myUsername, text, imageUrl, replyTo: replyingToId, fileData, fileName, audioData, linkPreview })
             });
             cancelReply();
+            fetchMessagesFromServer(); // Refresh stats (coins/XP)
         } catch (e) { console.error(e); }
     }
 
@@ -312,7 +368,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!loadedMessages.has(msg.id)) {
                     loadedMessages.add(msg.id);
                     if (msg.text.startsWith('[SYSTEM]:')) handleSystemMessage(msg.text);
-                    else addMessage(msg.author, msg.text, msg.author === myUsername, msg.imageUrl, msg.id, msg.replyTo, msg.reactions, msg.pinned, msg.fileName, msg.fileData);
+                    else addMessage(msg.author, msg.text, msg.author === myUsername, msg.imageUrl, msg.id, msg.replyTo, msg.reactions, msg.pinned, msg.fileName, msg.fileData, msg.audioData, msg.linkPreview);
                 } else {
                     updateMessageUI(msg);
                 }
@@ -320,7 +376,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) { }
     }
 
-    function addMessage(author, text, isUser, img, id, replyId, reactions = {}, isPinned = false, fileName = null, fileData = null) {
+    function addMessage(author, text, isUser, img, id, replyId, reactions = {}, isPinned = false, fileName = null, fileData = null, audioData = null, linkPreview = null) {
         const div = document.createElement('div');
         div.className = `message ${isPinned ? 'pinned-msg' : ''}`;
         div.id = `msg-${id}`;
@@ -330,6 +386,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let content = `<div class="message-text">${parseMarkdown(text)}</div>`;
         if (img) content += `<img src="${img}" class="chat-img" onclick="window.open('${img}')">`;
+
+        const textContent = document.createElement('div');
+        textContent.className = 'message-text-content';
+        textContent.innerHTML = parseMarkdown(text);
+
+        if (audioData) {
+            const player = document.createElement('div');
+            player.className = 'voice-msg-player';
+            player.innerHTML = `<i class="fas fa-play" onclick="window.playVoice(this, '${audioData}')"></i><div class="voice-wave"></div><span>رسالة صوتية</span>`;
+            textContent.appendChild(player);
+        }
+
+        if (linkPreview) {
+            const card = document.createElement('div');
+            card.className = 'link-preview-card';
+            card.innerHTML = `
+                ${linkPreview.img ? `<img src="${linkPreview.img}">` : ''}
+                <div class="link-preview-info">
+                    <h5>${linkPreview.title || 'رابط'}</h5>
+                    <p>${linkPreview.desc || ''}</p>
+                    <small style="color:var(--accent-color)">${linkPreview.url}</small>
+                </div>
+            `;
+            card.onclick = () => window.open(linkPreview.url, '_blank');
+            textContent.appendChild(card);
+        }
         if (fileData) content += `<div class="file-share"><i class="fas fa-file"></i> <a href="${fileData}" download="${fileName}">${fileName}</a></div>`;
 
         // Reactions
@@ -348,7 +430,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="message-timestamp">${new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</span>
                     ${isPinned ? '<i class="fas fa-thumbtack pin-indicator"></i>' : ''}
                 </div>
-                ${content}
+                ${textContent.outerHTML}
+                ${img ? `<img src="${img}" class="chat-img" onclick="window.open('${img}')">` : ''}
+                ${fileData ? `<div class="file-share"><i class="fas fa-file"></i> <a href="${fileData}" download="${fileName}">${fileName}</a></div>` : ''}
                 ${reactHtml}
             </div>
             <div class="message-actions">
@@ -412,7 +496,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.deleteMessage = async (id) => { if (confirm('حذف؟')) { await fetch(`/api/messages/${id}`, { method: 'DELETE' }); location.reload(); } };
 
-    function parseMarkdown(text) { return text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>').replace(/`(.*?)`/g, '<code>$1</code>'); }
+    function parseMarkdown(text) {
+        return text
+            .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+            .replace(/`(.*?)`/g, '<code>$1</code>')
+            .replace(/@(\w+)/g, '<span class="mention" onclick="window.openDM(\'$1\')">@$1</span>');
+    }
     function getRoleClass(u) { return (u === 'sww' || u.includes('المطور')) ? 'role-owner' : (u.toLowerCase().includes('admin') ? 'role-admin' : 'role-member'); }
     function getRoleBadge(u) { const c = getRoleClass(u); return c === 'role-owner' ? '<span class="role-badge badge-owner">المطور</span>' : (c === 'role-admin' ? '<span class="role-badge badge-admin">إدارة</span>' : ''); }
 
@@ -533,16 +622,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Existing Voice Logic --- (Simplified integration)
     const sendMessageToTelegram = sendMessage;
-    const fetchMessagesFromServerInterval = setInterval(fetchMessagesFromServer, 3000);
-    setInterval(fetchUsers, 10000);
-    setInterval(sendHeartbeat, 5000);
+    // --- Optimization: Reduced polling to fix lag ---
+    const fetchMessagesFromServerInterval = setInterval(fetchMessagesFromServer, 4000); // Increased from 3s to 4s
+    setInterval(fetchUsers, 15000); // Increased from 10s to 15s
+    setInterval(sendHeartbeat, 8000); // Increased from 5s to 8s
 
     // Initial Notif Permission
     if (Notification.permission === 'default') Notification.requestPermission();
     function playNotif() { document.getElementById('notif-sound').play().catch(() => { }); }
 
     function handleSystemMessage(text) {
-        if (text.startsWith('[SYSTEM]:VOICE_JOIN|')) {
+        if (text.startsWith('[SYSTEM]:ANNOUNCEMENT|')) {
+            const msg = text.split('|')[1];
+            addMessage('إعلان 📢', msg, false, null, Date.now(), null, {}, false, null, null, null, null);
+        } else if (text.startsWith('[SYSTEM]:ADMIN_UPDATE|')) {
+            const msg = text.split('|')[1];
+            addMessage('تحديث إداري 🛠️', msg, false, null, Date.now(), null, {}, false, null, null, null, null);
+        } else if (text.startsWith('[SYSTEM]:WATCH_JOIN|')) {
+            const url = text.split('|')[1];
+            window.syncWatchTogether(url);
+        } else if (text.startsWith('[SYSTEM]:VOICE_JOIN|')) {
             const parts = text.split('|');
             const peerId = parts[1], rm = parts[2], un = parts[3], av = parts[4];
 
@@ -716,4 +815,188 @@ document.addEventListener('DOMContentLoaded', () => {
         const u = Array.from(typingUsers).filter(x => x !== myUsername);
         document.getElementById('typing-indicator').innerText = u.length ? `${u.join(', ')} يكتب الآن...` : '';
     }
+
+    // --- Global Search (Ctrl + K) ---
+    window.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key === 'k') {
+            e.preventDefault();
+            document.getElementById('search-modal').style.display = 'flex';
+            document.getElementById('global-search-input').focus();
+        }
+    });
+
+    document.getElementById('global-search-input').oninput = async (e) => {
+        const query = e.target.value.toLowerCase();
+        const results = document.getElementById('search-results');
+        if (!query) { results.innerHTML = ''; return; }
+
+        try {
+            const res = await fetch('/api/messages');
+            const msgs = await res.json();
+            const filtered = msgs.filter(m => m.text.toLowerCase().includes(query) || m.author.toLowerCase().includes(query));
+
+            results.innerHTML = filtered.map(m => `
+                <div class="search-item" onclick="document.getElementById('search-modal').style.display='none'; document.getElementById('msg-${m.id}')?.scrollIntoView()">
+                    <span class="search-meta">${m.author} • ${new Date(m.timestamp).toLocaleDateString()}</span>
+                    <div class="search-text">${m.text.substring(0, 80)}...</div>
+                </div>
+            `).join('');
+        } catch (e) { }
+    };
+
+    // --- Role Shop ---
+    window.showShop = async () => {
+        const res = await fetch('/api/shop');
+        const items = await res.json();
+        const list = document.getElementById('shop-items-list');
+        list.innerHTML = items.map(i => `
+            <div class="shop-item">
+                <i class="fas fa-crown" style="color:${i.color}; font-size:30px;"></i>
+                <h4>${i.name}</h4>
+                <span class="price">${i.price} <i class="fas fa-coins"></i></span>
+                <button class="btn-save" onclick="window.buyItem('${i.id}')">شراء</button>
+            </div>
+        `).join('');
+        document.getElementById('shop-modal').style.display = 'flex';
+    };
+
+    window.buyItem = async (itemId) => {
+        const res = await fetch('/api/shop/buy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: myUsername, itemId })
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert('تهانينا! تم شراء الرتبة بنجاح.');
+            loginUser(data.user);
+            document.getElementById('shop-modal').style.display = 'none';
+        } else alert('عذراً، رصيدك غير كافٍ أو حدث خطأ.');
+    };
+
+    // --- DM System ---
+    window.openDM = async (username) => {
+        if (username === myUsername) return;
+        currentDMPeer = username;
+        document.getElementById('dm-target-name').innerText = `دردشة خاصة مع @${username}`;
+        document.getElementById('dm-modal').style.display = 'flex';
+        fetchDMs();
+    };
+
+    async function fetchDMs() {
+        if (!currentDMPeer) return;
+        const res = await fetch(`/api/dms/${myUsername}/${currentDMPeer}`);
+        const dms = await res.json();
+        const container = document.getElementById('dm-messages');
+        container.innerHTML = dms.map(d => `
+            <div class="dm-msg ${d.from === myUsername ? 'sent' : 'received'}">
+                <small>${d.from}</small>
+                <div>${d.text}</div>
+            </div>
+        `).join('');
+        container.scrollTop = container.scrollHeight;
+    }
+
+    window.sendDM = async () => {
+        const text = document.getElementById('dm-input').value;
+        if (!text) return;
+        await fetch('/api/dms', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from: myUsername, to: currentDMPeer, text })
+        });
+        document.getElementById('dm-input').value = '';
+        fetchDMs();
+    };
+
+    // --- Admin Dashboard ---
+    window.showAdminTab = (tab) => {
+        document.querySelectorAll('.admin-tab-content').forEach(c => c.style.display = 'none');
+        document.querySelectorAll('.admin-tab-btn').forEach(b => b.classList.remove('active'));
+        // Find button by onclick text
+        document.querySelectorAll('.admin-tab-btn').forEach(b => {
+            if (b.getAttribute('onclick').includes(tab)) b.classList.add('active');
+        });
+        document.getElementById(`admin-${tab}-tab`).style.display = 'block';
+        if (tab === 'mod') fetchAdminUserList();
+        if (tab === 'auto') renderAutoRules();
+    };
+
+    async function fetchAdminUserList() {
+        const res = await fetch('/api/users');
+        const users = await res.json();
+        const list = document.getElementById('admin-user-list');
+        list.innerHTML = users.map(u => `
+            <div class="admin-user-item">
+                <span>${u.fullname || u.username} (@${u.username})</span>
+                <div class="admin-actions">
+                    <button class="btn-kick" onclick="window.adminAction('kick', '${u.username}')">طرد</button>
+                    <button class="btn-ban" onclick="window.adminAction('ban', '${u.username}')">حظر</button>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    window.adminAction = async (action, username) => {
+        if (!isAdmin) return alert('ليست لديك صلاحية!');
+        await fetch(`/api/admin/${action}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username })
+        });
+        alert(`تم تنفيذ ${action} على ${username}`);
+        fetchAdminUserList();
+    };
+
+    window.addAutoRule = () => {
+        const trigger = document.getElementById('auto-trigger').value;
+        const response = document.getElementById('auto-response').value;
+        if (trigger && response) {
+            autoRules.push({ trigger, response });
+            localStorage.setItem('rust_cord_auto_rules', JSON.stringify(autoRules));
+            renderAutoRules();
+            document.getElementById('auto-trigger').value = '';
+            document.getElementById('auto-response').value = '';
+        }
+    };
+
+    function renderAutoRules() {
+        const list = document.getElementById('auto-rules-list');
+        list.innerHTML = autoRules.map((r, i) => `
+            <div class="admin-user-item">
+                <span>"${r.trigger}" ➡ "${r.response}"</span>
+                <button class="btn-ban" onclick="window.deleteAutoRule(${i})">حذف</button>
+            </div>
+        `).join('');
+    }
+
+    window.deleteAutoRule = (i) => {
+        autoRules.splice(i, 1);
+        localStorage.setItem('rust_cord_auto_rules', JSON.stringify(autoRules));
+        renderAutoRules();
+    };
+
+    // Add buttons for Shop/Admin in UI
+    const controlsContainer = document.querySelector('.input-icons');
+    const shopBtn = document.createElement('i');
+    shopBtn.className = 'fas fa-shopping-cart';
+    shopBtn.title = 'المتجر';
+    shopBtn.onclick = window.showShop;
+    controlsContainer.appendChild(shopBtn);
+
+    const adminBtn = document.createElement('i');
+    adminBtn.className = 'fas fa-user-shield';
+    adminBtn.title = 'الإدارة';
+    adminBtn.onclick = () => { if (isAdmin) { document.getElementById('admin-modal').style.display = 'flex'; window.showAdminTab('mod'); } else alert('الأدوات مخصصة للإدارة فقط!'); };
+    controlsContainer.appendChild(adminBtn);
+
+    const originalFetchUsers = fetchUsers;
+    fetchUsers = async () => {
+        await originalFetchUsers();
+        document.querySelectorAll('.member-item').forEach(item => {
+            const userName = item.querySelector('.member-name').innerText.split('(@')[1]?.replace(')', '') || item.querySelector('.member-name').innerText;
+            item.onclick = () => window.openDM(userName);
+            item.title = 'انقر لبدء محادثة خاصة';
+        });
+    };
 });
