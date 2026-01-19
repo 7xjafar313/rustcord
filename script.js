@@ -159,8 +159,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } catch (e) { console.error(e); stopMusicSync(); }
         } else {
-            // Using a slightly more robust embed URL format
-            ytContainer.innerHTML = `<iframe id="bot-video-player" width="200" height="112" src="https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(query)}&autoplay=1&origin=${window.location.origin}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+            // Smart YouTube Parser
+            let videoId = null;
+            // Try to extract ID if it's a URL
+            const urlPattern = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+            const match = query.match(urlPattern);
+            if (match && match[1]) {
+                videoId = match[1];
+                ytContainer.innerHTML = `<iframe id="bot-video-player" width="200" height="112" src="https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+            } else {
+                // Fallback to search list
+                ytContainer.innerHTML = `<iframe id="bot-video-player" width="200" height="112" src="https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(query)}&autoplay=1&origin=${window.location.origin}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+            }
         }
     }
 
@@ -438,7 +448,7 @@ document.addEventListener('DOMContentLoaded', () => {
             await fetch('/api/messages', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ author: myUsername, text, imageUrl, replyTo: replyingToId, fileData, fileName, audioData, linkPreview })
+                body: JSON.stringify({ author: myUsername, text, imageUrl, replyTo: replyingToId, fileData, fileName, audioData, linkPreview, channelId: currentChannel })
             });
             cancelReply();
             fetchMessagesFromServer(); // Refresh stats (coins/XP)
@@ -447,7 +457,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function fetchMessagesFromServer() {
         try {
-            const res = await fetch('/api/messages');
+            if (!currentChannel) return;
+            const res = await fetch(`/api/messages?channelId=${currentChannel}`);
             const msgs = await res.json();
             const pinned = msgs.filter(m => m.pinned);
             updatePinnedUI(pinned);
@@ -798,10 +809,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const name = c.querySelector('span').innerText;
             if (c.classList.contains('voice-channel')) joinVoiceChannel(name);
             else {
+                if (currentChannel === name) return;
                 document.querySelectorAll('.channel').forEach(ch => ch.classList.remove('active'));
                 c.classList.add('active');
+                currentChannel = name; // Update global state
                 document.querySelector('.chat-header h2').innerText = name;
                 input.placeholder = `إرسال إلى #${name}`;
+
+                // Clear messages and reload for new channel
+                messagesContainer.innerHTML = '';
+                loadedMessages = new Set();
+                fetchMessagesFromServer();
             }
         };
     });

@@ -27,18 +27,96 @@ if (!fs.existsSync(DB_FILE)) {
     fs.writeFileSync(DB_FILE, JSON.stringify(defaultData, null, 2));
 }
 
-const getDB = () => JSON.parse(fs.readFileSync(DB_FILE));
-const saveDB = (db) => fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+// --- Telegram Persistence Logic ---
+const TG_BOT_TOKEN = '6780979570:AAEpS358Uxk_FuegiXu80-ElfxnVFE_AQrU';
+const TG_CHAT_ID = '1680454327';
+let lastBackupTime = 0;
 
-app.get('/api/messages', (req, res) => res.json(getDB().messages));
+async function restoreFromTelegram() {
+    try {
+        console.log('Restoring from Telegram...');
+        const chatRes = await fetch(`https://api.telegram.org/bot${TG_BOT_TOKEN}/getChat?chat_id=${TG_CHAT_ID}`);
+        const chatData = await chatRes.json();
+
+        if (chatData.ok && chatData.result.pinned_message && chatData.result.pinned_message.document) {
+            const doc = chatData.result.pinned_message.document;
+            const fileRes = await fetch(`https://api.telegram.org/bot${TG_BOT_TOKEN}/getFile?file_id=${doc.file_id}`);
+            const fileData = await fileRes.json();
+
+            if (fileData.ok) {
+                const dbContentRes = await fetch(`https://api.telegram.org/file/bot${TG_BOT_TOKEN}/${fileData.result.file_path}`);
+                const dbContent = await dbContentRes.text();
+                fs.writeFileSync(DB_FILE, dbContent);
+                console.log('Database restored successfully from Telegram!');
+            }
+        } else {
+            console.log('No backup found or pinned.');
+        }
+    } catch (e) { console.error('Restore failed:', e); }
+}
+
+async function backupToTelegram() {
+    if (Date.now() - lastBackupTime < 10000) return; // Debounce 10s
+    lastBackupTime = Date.now();
+
+    try {
+        const formData = new FormData();
+        formData.append('chat_id', TG_CHAT_ID);
+        formData.append('document', new Blob([fs.readFileSync(DB_FILE)], { type: 'application/json' }), 'database.json');
+
+        const res = await fetch(`https://api.telegram.org/bot${TG_BOT_TOKEN}/sendDocument`, {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+
+        if (data.ok) {
+            // Pin the message to make it easy to find later
+            await fetch(`https://api.telegram.org/bot${TG_BOT_TOKEN}/pinChatMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: TG_CHAT_ID, message_id: data.result.message_id })
+            });
+        }
+    } catch (e) { console.error('Backup failed:', e); }
+}
+
+// Restore on start
+restoreFromTelegram().then(() => {
+    if (!fs.existsSync(DB_FILE)) {
+        // ... (Default init logic if restore failed/empty)
+    }
+});
+
+const getDB = () => {
+    if (!fs.existsSync(DB_FILE)) return {}; // Safety
+    return JSON.parse(fs.readFileSync(DB_FILE));
+};
+const saveDB = (db) => {
+    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+    backupToTelegram(); // Async backup
+};
+
+app.get('/api/messages', (req, res) => {
+    const { channelId } = req.query;
+    const db = getDB();
+    if (channelId) {
+        // Filter messages by channel
+        const filtered = db.messages.filter(m => m.channelId === channelId || (!m.channelId && channelId === 'general'));
+        res.json(filtered);
+    } else {
+        res.json(db.messages);
+    }
+});
 
 app.post('/api/messages', (req, res) => {
-    const { author, text, timestamp, imageUrl, replyTo, fileData, fileName } = req.body;
+    const { author, text, timestamp, imageUrl, replyTo, fileData, fileName, channelId } = req.body;
     const db = getDB();
     const newMessage = {
         id: Date.now(),
         author,
         text,
+        channelId: channelId || 'general',
         timestamp: timestamp || new Date().toISOString(),
         imageUrl,
         replyTo,
@@ -57,7 +135,8 @@ app.post('/api/messages', (req, res) => {
     }
 
     db.messages.push(newMessage);
-    if (db.messages.length > 200) db.messages.shift();
+    // Keep more messages since we are splitting by channel now (limit per channel maybe? stick to global limit for now but increased)
+    if (db.messages.length > 1000) db.messages.shift();
     saveDB(db);
     res.status(201).json(newMessage);
 });

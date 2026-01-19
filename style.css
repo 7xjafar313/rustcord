@@ -1220,17 +1220,21 @@ body {
         display: none;
     }
 
-    /* Sidebar becomes a drawer */
+    /* Sidebar becomes a drawer - RTL Adjusted (Right Side) */
     .channels-sidebar {
         position: absolute;
         width: 260px;
         height: 100%;
-        left: 0;
+        right: 0;
+        left: auto;
         top: 0;
-        z-index: 1000;
-        transform: translateX(-100%);
+        z-index: 2500;
+        transform: translateX(100%);
+        /* Hidden to the right */
         transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        box-shadow: 4px 0 15px rgba(0, 0, 0, 0.5);
+        box-shadow: -4px 0 15px rgba(0, 0, 0, 0.5);
+        /* Shadow on left */
+        background-color: var(--bg-secondary);
     }
 
     .channels-sidebar.active {
