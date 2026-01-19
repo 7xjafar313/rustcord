@@ -321,6 +321,37 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    async function getCircularCrop(dataUrl, size = 128) {
+        return new Promise(resolve => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = size;
+                canvas.height = size;
+                const ctx = canvas.getContext('2d');
+                const min = Math.min(img.width, img.height);
+                const x = (img.width - min) / 2;
+                const y = (img.height - min) / 2;
+                ctx.drawImage(img, x, y, min, min, 0, 0, size, size);
+                resolve(canvas.toDataURL('image/jpeg', 0.8));
+            };
+            img.src = dataUrl;
+        });
+    }
+
+    document.getElementById('avatar-file-input').onchange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = async (ev) => {
+                const cropped = await getCircularCrop(ev.target.result);
+                document.getElementById('settings-avatar-preview').src = cropped;
+                document.getElementById('settings-avatar').value = cropped;
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
     document.getElementById('logout-btn').onclick = () => { localStorage.removeItem('rust_cord_user'); location.reload(); };
     document.getElementById('close-settings').onclick = () => settingsModal.style.display = 'none';
     document.getElementById('cancel-settings').onclick = () => settingsModal.style.display = 'none';
@@ -384,9 +415,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const roleClass = getRoleClass(author);
         const avatar = (author === myUsername && currentUser.avatar) ? currentUser.avatar : `https://ui-avatars.com/api/?name=${author}&background=random`;
 
-        let content = `<div class="message-text">${parseMarkdown(text)}</div>`;
-        if (img) content += `<img src="${img}" class="chat-img" onclick="window.open('${img}')">`;
-
         const textContent = document.createElement('div');
         textContent.className = 'message-text-content';
         textContent.innerHTML = parseMarkdown(text);
@@ -412,7 +440,6 @@ document.addEventListener('DOMContentLoaded', () => {
             card.onclick = () => window.open(linkPreview.url, '_blank');
             textContent.appendChild(card);
         }
-        if (fileData) content += `<div class="file-share"><i class="fas fa-file"></i> <a href="${fileData}" download="${fileName}">${fileName}</a></div>`;
 
         // Reactions
         let reactHtml = '<div class="reactions-container">';
@@ -427,7 +454,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="message-header">
                     ${getRoleBadge(author)}
                     <span class="message-author ${roleClass}">${author}</span>
-                    <span class="message-timestamp">${new Date().toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span class="message-timestamp">${new Date(Number(id)).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</span>
                     ${isPinned ? '<i class="fas fa-thumbtack pin-indicator"></i>' : ''}
                 </div>
                 ${textContent.outerHTML}
@@ -616,7 +643,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Shortcuts ---
     window.addEventListener('keydown', (e) => {
-        if (e.ctrlKey && e.key === 'k') { e.preventDefault(); alert('البحث السريع قادم قريباً!'); }
         if (e.key === 'Escape') cancelReply();
     });
 
@@ -697,9 +723,9 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     });
 
-    document.getElementById('disconnect-voice').onclick = leaveVoice;
+    document.getElementById('leave-voice-btn').onclick = leaveVoice;
 
-    document.getElementById('toggle-camera').onclick = async function () {
+    document.getElementById('camera-btn').onclick = async function () {
         try {
             isCameraOn = !isCameraOn;
             this.classList.toggle('active', isCameraOn);
@@ -724,7 +750,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    document.getElementById('toggle-screen').onclick = async function () {
+    document.getElementById('screen-btn').onclick = async function () {
         try {
             isScreenSharing = !isScreenSharing;
             this.classList.toggle('active', isScreenSharing);
