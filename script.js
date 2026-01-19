@@ -55,8 +55,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const res = await fetch('/api/announcement');
         const data = await res.json();
         if (data && data.active) {
-            document.getElementById('announcement-banner').style.display = 'flex';
+            const banner = document.getElementById('announcement-banner');
+            banner.style.display = 'flex';
             document.getElementById('announcement-text').innerText = data.text;
+            setTimeout(() => {
+                banner.style.opacity = '0';
+                setTimeout(() => banner.style.display = 'none', 500);
+            }, 10000);
         }
     }
 
@@ -172,7 +177,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function initPeer() {
         if (peer) return;
         peer = new Peer();
-        peer.on('open', (id) => console.log('Peer ID:', id));
+        peer.on('open', (id) => {
+            console.log('Peer ID:', id);
+            if (currentChannel) broadcastStreamUpdate();
+        });
         peer.on('call', (call) => {
             console.log('Receiving call from:', call.peer);
             call.answer(localStream || new MediaStream());
@@ -244,16 +252,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function joinVoiceChannel(name) {
         if (currentChannel === name && voicePanel.style.display === 'flex') return;
+
+        currentChannel = name;
         initPeer();
+
         try {
-            localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isCameraOn });
+            if (localStream) {
+                localStream.getTracks().forEach(t => t.stop());
+            }
+            localStream = await navigator.mediaDevices.getUserMedia({
+                audio: true,
+                video: isCameraOn
+            });
+
             voicePanel.style.display = 'flex';
             voicePanel.querySelector('.channel-name').innerText = name;
-            currentChannel = name;
-            broadcastStreamUpdate();
+
+            if (peer && peer.id) {
+                broadcastStreamUpdate();
+            }
         } catch (e) {
             console.error('Mic Access Error:', e);
-            alert('تعذر الوصول للميكروفون. تأكد من إعطاء الإذن.');
+            alert('تعذر الوصول للميكروفون أو الكاميرا. تأكد من إعطاء الإذن بالوصول (Allow).');
+            currentChannel = null;
         }
     }
 
@@ -272,6 +293,7 @@ document.addEventListener('DOMContentLoaded', () => {
         videoGrid.style.display = 'none';
         videoGrid.innerHTML = '';
         voicePanel.style.display = 'none';
+        currentChannel = null; // Reset channel on leave
     }
 
     document.querySelector('.user-info').onclick = () => {
