@@ -1207,3 +1207,73 @@ body {
 ::-webkit-scrollbar-thumb:hover {
     background: #111112;
 }
+
+/* --- Mobile Responsive Styles --- */
+@media (max-width: 768px) {
+    .app-container {
+        position: relative;
+        overflow-x: hidden;
+    }
+
+    /* Hide server icons list on mobile to maximize space */
+    .servers-sidebar {
+        display: none;
+    }
+
+    /* Sidebar becomes a drawer */
+    .channels-sidebar {
+        position: absolute;
+        width: 260px;
+        height: 100%;
+        left: 0;
+        top: 0;
+        z-index: 1000;
+        transform: translateX(-100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 4px 0 15px rgba(0, 0, 0, 0.5);
+    }
+
+    .channels-sidebar.active {
+        transform: translateX(0);
+    }
+
+    /* Main chat takes full width */
+    .chat-area {
+        width: 100%;
+        flex: 1;
+    }
+
+    /* Header adjustments */
+    .header-info h2 {
+        font-size: 14px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        max-width: 200px;
+        overflow: hidden;
+    }
+
+    /* Hide members list to save space */
+    .members-sidebar {
+        display: none;
+    }
+
+    /* Show the menu button */
+    #mobile-menu-btn {
+        display: block !important;
+        font-size: 20px;
+        padding: 5px;
+    }
+
+    /* Adjust modals for mobile */
+    .modal-card {
+        width: 95%;
+        padding: 15px;
+        max-height: 85vh;
+    }
+
+    /* Auth screen responsiveness */
+    .auth-card {
+        width: 90%;
+        padding: 20px;
+    }
+}

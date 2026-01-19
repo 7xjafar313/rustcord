@@ -14,9 +14,10 @@ if (!fs.existsSync(DB_FILE)) {
         users: [],
         dms: [],
         bannedUsers: [],
+        voiceStates: [],
         announcement: { text: 'مرحباً بكم في راست كورد v3! 🚀', active: true },
         servers: [
-            { id: 'rust-main', name: 'Rust Cord Main', icon: '🛠', channels: [{ id: 'general', name: 'العام', type: 'text' }, { id: 'voice-1', name: 'ديوانية', type: 'voice' }] }
+            { id: 'rust-main', name: 'Rust Cord Main', icon: '🛠', channels: [{ id: 'general', name: 'العام', type: 'text' }, { id: 'voice-1', name: 'ديوانية', type: 'voice' }, { id: 'voice-2', name: 'لعب', type: 'voice' }] }
         ],
         shopItems: [
             { id: 'role-vip', name: 'VIP Role', price: 1000, type: 'role', color: '#f1c40f' },
@@ -100,6 +101,12 @@ app.post('/api/heartbeat', (req, res) => {
         if (customStatus !== undefined) user.customStatus = customStatus;
         saveDB(db);
     }
+    // Also update voice heartbeat if user is in voice
+    if (db.voiceStates) {
+        const vState = db.voiceStates.find(v => v.username === username);
+        if (vState) vState.lastSeen = Date.now();
+        saveDB(db); // Save again if changed
+    }
     res.json({ success: true });
 });
 
@@ -108,6 +115,53 @@ app.get('/api/users', (req, res) => {
         username: u.username, fullname: u.fullname, avatar: u.avatar,
         lastSeen: u.lastSeen, status: u.status, customStatus: u.customStatus
     })));
+});
+
+// Voice State Management
+app.get('/api/voice-states', (req, res) => {
+    const db = getDB();
+    // Filter out stale voice users (timeout > 30s)
+    if (db.voiceStates) {
+        const now = Date.now();
+        const activeStates = db.voiceStates.filter(v => (now - v.lastSeen) < 30000);
+        if (activeStates.length !== db.voiceStates.length) {
+            db.voiceStates = activeStates;
+            saveDB(db);
+        }
+        res.json(db.voiceStates);
+    } else {
+        res.json([]);
+    }
+});
+
+app.post('/api/voice/join', (req, res) => {
+    const { username, channelId, peerId, avatar } = req.body;
+    const db = getDB();
+    if (!db.voiceStates) db.voiceStates = [];
+
+    // Remove if already exists elsewhere
+    db.voiceStates = db.voiceStates.filter(v => v.username !== username);
+
+    db.voiceStates.push({
+        username,
+        channelId,
+        peerId,
+        avatar,
+        lastSeen: Date.now()
+    });
+
+    saveDB(db);
+    res.json({ success: true });
+});
+
+app.post('/api/voice/leave', (req, res) => {
+    const { username } = req.body;
+    const db = getDB();
+    if (db.voiceStates) {
+        db.voiceStates = db.voiceStates.filter(v => v.username !== username);
+        saveDB(db);
+    }
+    res.json({ success: true });
 });
 
 app.get('/api/servers', (req, res) => res.json(getDB().servers || []));

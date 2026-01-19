@@ -111,13 +111,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (text.startsWith('#شغل ')) {
             const query = text.replace('#شغل ', '').trim();
             if (query.startsWith('@')) {
-                await sendMessageToTelegram(`[SYSTEM]:MUSIC_PLAY_TG|${query}`);
+                await sendMessage(`[SYSTEM]:MUSIC_PLAY_TG|${query}`);
             } else {
-                await sendMessageToTelegram(`[SYSTEM]:MUSIC_PLAY|${query}`);
+                await sendMessage(`[SYSTEM]:MUSIC_PLAY|${query}`);
             }
             return true;
         } else if (text === '#ايقاف') {
-            await sendMessageToTelegram(`[SYSTEM]:MUSIC_STOP`);
+            await sendMessage(`[SYSTEM]:MUSIC_STOP`);
             return true;
         }
         return false;
@@ -125,6 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function playMusicSync(query, isTg = false) {
         musicPlayerBar.style.display = 'flex';
+        ytContainer.style.display = 'block'; // Show the player container
         musicTitle.innerText = `جاري تشغيل: ${query}`;
 
         // Add "Music Bot" to the current voice channel list visually
@@ -158,19 +159,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             } catch (e) { console.error(e); stopMusicSync(); }
         } else {
-            ytContainer.innerHTML = `<iframe id="bot-video-player" width="200" height="112" src="https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(query)}&autoplay=1" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+            // Using a slightly more robust embed URL format
+            ytContainer.innerHTML = `<iframe id="bot-video-player" width="200" height="112" src="https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(query)}&autoplay=1&origin=${window.location.origin}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
         }
     }
 
     function stopMusicSync() {
         musicPlayerBar.style.display = 'none';
+        ytContainer.style.display = 'none'; // Hide container
         ytContainer.innerHTML = '';
         const botEl = document.getElementById('voice-user-bot');
         if (botEl) botEl.remove();
     }
 
     document.getElementById('music-stop').onclick = () => {
-        sendMessageToTelegram(`[SYSTEM]:MUSIC_STOP`);
+        sendMessage(`[SYSTEM]:MUSIC_STOP`);
     };
 
     // --- Media & PeerJS Core ---
@@ -230,6 +233,20 @@ document.addEventListener('DOMContentLoaded', () => {
     async function broadcastStreamUpdate() {
         if (peer && peer.id && currentChannel) {
             await sendMessageToTelegram(`[SYSTEM]:VOICE_JOIN|${peer.id}|${currentChannel}|${currentUser.fullname || currentUser.username}|${currentUser.avatar || ''}`);
+
+            // Register with server persistence
+            await fetch('/api/voice/join', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: myUsername,
+                    channelId: currentChannel,
+                    peerId: peer.id,
+                    avatar: currentUser.avatar
+                })
+            });
+            // Force immediate sync to show stable state
+            setTimeout(syncVoiceStates, 500);
         }
     }
 
@@ -268,6 +285,19 @@ document.addEventListener('DOMContentLoaded', () => {
             voicePanel.style.display = 'flex';
             voicePanel.querySelector('.channel-name').innerText = name;
 
+            // Optimistic UI: Show myself immediately
+            const vList = document.getElementById(`voice-users-${name}`);
+            if (vList) {
+                // Remove existing self if any
+                const existing = [...vList.children].find(c => c.innerHTML.includes(myUsername));
+                if (!existing) {
+                    const item = document.createElement('div');
+                    item.className = 'voice-user-item';
+                    item.innerHTML = `<img src="${currentUser.avatar || 'https://via.placeholder.com/32'}"><span>${myUsername}</span>`;
+                    vList.appendChild(item);
+                }
+            }
+
             if (peer && peer.id) {
                 broadcastStreamUpdate();
             }
@@ -281,6 +311,11 @@ document.addEventListener('DOMContentLoaded', () => {
     async function leaveVoice() {
         if (peer && peer.id && currentChannel) {
             await sendMessageToTelegram(`[SYSTEM]:VOICE_LEAVE|${peer.id}|${currentChannel}`);
+            await fetch('/api/voice/leave', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: myUsername })
+            });
         }
         if (localStream) {
             localStream.getTracks().forEach(t => t.stop());
@@ -671,9 +706,35 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Existing Voice Logic --- (Simplified integration)
     const sendMessageToTelegram = sendMessage;
     // --- Optimization: Reduced polling to fix lag ---
-    const fetchMessagesFromServerInterval = setInterval(fetchMessagesFromServer, 4000); // Increased from 3s to 4s
-    setInterval(fetchUsers, 15000); // Increased from 10s to 15s
-    setInterval(sendHeartbeat, 8000); // Increased from 5s to 8s
+    const fetchMessagesFromServerInterval = setInterval(fetchMessagesFromServer, 4000);
+    setInterval(fetchUsers, 15000);
+    setInterval(sendHeartbeat, 8000);
+    setInterval(syncVoiceStates, 5000); // Sync voice users every 5s
+
+    async function syncVoiceStates() {
+        try {
+            const res = await fetch('/api/voice-states');
+            const states = await res.json();
+
+            // We only clear if we have data to replace, to avoid flicker
+            // Better strategy: Clear all lists then repopulate. 
+            // Since this runs every 5s, we want to be careful not to kill our own optimistic adding.
+            // But the server is the source of truth.
+
+            document.querySelectorAll('.voice-user-list').forEach(l => l.innerHTML = '');
+
+            states.forEach(s => {
+                const list = document.getElementById(`voice-users-${s.channelId}`);
+                if (list) {
+                    const item = document.createElement('div');
+                    item.className = 'voice-user-item';
+                    item.id = `voice-user-${s.peerId}`;
+                    item.innerHTML = `<img src="${s.avatar || 'https://via.placeholder.com/32'}"><span>${s.username}</span>`;
+                    list.appendChild(item);
+                }
+            });
+        } catch (e) { }
+    }
 
     // Initial Notif Permission
     if (Notification.permission === 'default') Notification.requestPermission();
