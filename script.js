@@ -435,21 +435,123 @@ document.addEventListener('DOMContentLoaded', () => {
     function playNotif() { document.getElementById('notif-sound').play().catch(() => { }); }
 
     function handleSystemMessage(text) {
-        // Voice Logic remains similar to before...
-        if (text.startsWith('[SYSTEM]:TYPING|')) { typingUsers.add(text.split('|')[1]); updateTypingUI(); }
+        if (text.startsWith('[SYSTEM]:VOICE_JOIN|')) {
+            const parts = text.split('|');
+            const peerId = parts[1], rm = parts[2], un = parts[3], av = parts[4];
+            const list = document.getElementById(`voice-users-${rm}`);
+            if (list && !document.getElementById(`voice-user-${peerId}`)) {
+                const item = document.createElement('div');
+                item.className = 'voice-user-item';
+                item.id = `voice-user-${peerId}`;
+                item.innerHTML = `<img src="${av || `https://ui-avatars.com/api/?name=${un}&background=random`}"><span>${un}</span>`;
+                list.appendChild(item);
+            }
+            if (peer && peer.id && peerId !== peer.id && localStream && rm === currentChannel) {
+                const call = peer.call(peerId, localStream);
+                call.on('stream', (rs) => handleRemoteStream(rs, peerId));
+                currentCall = call;
+            }
+        } else if (text.startsWith('[SYSTEM]:VOICE_LEAVE|')) {
+            const pid = text.split('|')[1];
+            const el = document.getElementById(`voice-user-${pid}`);
+            if (el) el.remove();
+        } else if (text.startsWith('[SYSTEM]:TYPING|')) { typingUsers.add(text.split('|')[1]); updateTypingUI(); }
         else if (text.startsWith('[SYSTEM]:STOP_TYPING|')) { typingUsers.delete(text.split('|')[1]); updateTypingUI(); }
-        else if (text.startsWith('[SYSTEM]:MUSIC_PLAY|')) {
-            const query = text.split('|')[1];
-            playMusicSync(query, false);
-        }
-        else if (text.startsWith('[SYSTEM]:MUSIC_PLAY_TG|')) {
-            const query = text.split('|')[1];
-            playMusicSync(query, true);
-        }
-        else if (text === '[SYSTEM]:MUSIC_STOP') {
-            stopMusicSync();
+        else if (text.startsWith('[SYSTEM]:MUSIC_PLAY|')) { playMusicSync(text.split('|')[1], false); }
+        else if (text.startsWith('[SYSTEM]:MUSIC_PLAY_TG|')) { playMusicSync(text.split('|')[1], true); }
+        else if (text === '[SYSTEM]:MUSIC_STOP') { stopMusicSync(); }
+    }
+
+    // --- PeerJS & Streaming Logic ---
+    function initPeer() {
+        if (peer) return;
+        peer = new Peer();
+        peer.on('open', (id) => console.log('Peer ID:', id));
+        peer.on('call', (call) => {
+            call.answer(localStream || new MediaStream());
+            call.on('stream', (rs) => handleRemoteStream(rs, call.peer));
+        });
+    }
+
+    function handleRemoteStream(stream, pid) {
+        if (stream.getVideoTracks().length > 0) {
+            videoGrid.style.display = 'grid';
+            let v = document.getElementById(`video-${pid}`);
+            if (!v) {
+                const div = document.createElement('div'); div.className = 'video-item'; div.id = `container-${pid}`;
+                v = document.createElement('video'); v.id = `video-${pid}`; v.autoplay = true; v.playsinline = true;
+                const lbl = document.createElement('div'); lbl.className = 'video-label'; lbl.innerText = `مستخدم #${pid.substring(0, 4)}`;
+                div.appendChild(v); div.appendChild(lbl); videoGrid.appendChild(div);
+            }
+            v.srcObject = stream;
         }
     }
+
+    async function joinVoiceChannel(name) {
+        if (currentChannel === name && voicePanel.style.display === 'flex') return;
+        initPeer();
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            voicePanel.style.display = 'flex';
+            voicePanel.querySelector('.channel-name').innerText = name;
+            currentChannel = name;
+            if (peer.id) await sendMessageToTelegram(`[SYSTEM]:VOICE_JOIN|${peer.id}|${name}|${currentUser.fullname || currentUser.username}|${currentUser.avatar || ''}`);
+        } catch (e) { alert('بإمكانك الدخول لكن الميكروفون معطل'); }
+    }
+
+    async function leaveVoice() {
+        if (peer && peer.id && currentChannel) await sendMessageToTelegram(`[SYSTEM]:VOICE_LEAVE|${peer.id}|${currentChannel}`);
+        if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+        videoGrid.style.display = 'none'; videoGrid.innerHTML = ''; voicePanel.style.display = 'none';
+    }
+
+    // --- Interactive Listeners ---
+    document.querySelectorAll('.channel').forEach(c => {
+        c.onclick = () => {
+            const name = c.querySelector('span').innerText;
+            if (c.classList.contains('voice-channel')) joinVoiceChannel(name);
+            else {
+                document.querySelectorAll('.channel').forEach(ch => ch.classList.remove('active'));
+                c.classList.add('active');
+                document.querySelector('.chat-header h2').innerText = name;
+                input.placeholder = `إرسال إلى #${name}`;
+            }
+        };
+    });
+
+    document.getElementById('disconnect-voice').onclick = leaveVoice;
+    document.getElementById('toggle-camera').onclick = async () => {
+        isCameraOn = !isCameraOn;
+        const stream = await navigator.mediaDevices.getUserMedia({ video: isCameraOn, audio: true });
+        localStream = stream;
+        updateLocalVideo();
+    };
+
+    function updateLocalVideo() {
+        let v = document.getElementById('local-video');
+        if (isCameraOn) {
+            videoGrid.style.display = 'grid';
+            if (!v) {
+                const div = document.createElement('div'); div.className = 'video-item'; div.id = 'container-local';
+                v = document.createElement('video'); v.id = 'local-video'; v.autoplay = true; v.muted = true;
+                div.appendChild(v); videoGrid.prepend(div);
+            }
+            v.srcObject = localStream;
+        } else {
+            const el = document.getElementById('container-local'); if (el) el.remove();
+        }
+    }
+
+    // Control Buttons
+    document.querySelector('.fa-microphone').onclick = (e) => {
+        e.target.classList.toggle('fa-microphone-slash');
+        if (localStream) localStream.getAudioTracks()[0].enabled = !e.target.classList.contains('fa-microphone-slash');
+    };
+    document.querySelector('.fa-headphones').onclick = (e) => {
+        e.target.classList.toggle('fa-volume-mute');
+        messagesContainer.querySelectorAll('video, audio').forEach(el => el.muted = e.target.classList.contains('fa-volume-mute'));
+    };
+    document.querySelector('.fa-cog').onclick = () => document.querySelector('.user-info').click();
 
     function updateTypingUI() {
         const u = Array.from(typingUsers).filter(x => x !== myUsername);
